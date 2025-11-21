@@ -3,6 +3,10 @@
       [pageTitle]="'Waktu Reaksi & Kontrol Kendaraan'"
       [pageSubtitle]="'Analisis Reaksi Kemudi, Pengereman, dan Akurasi Multisistem'">
       <div class="action-buttons" slot="actions">
+        <ion-button routerLink="/waktu-reaksi/driving" fill="solid" color="secondary" size="small">
+          <ion-icon name="car-sport-outline"></ion-icon>
+          Mulai Simulasi
+        </ion-button>
         <ion-button (click)="openTestSelection()" fill="solid" color="primary" size="small">
           <ion-icon name="play-outline"></ion-icon>
           Mulai Tes Baru

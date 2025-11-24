@@ -43,41 +43,43 @@ ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// --- ROAD GENERATION ---
-const mainRoadWidth = 12;
-const smallRoadWidth = 8;
-const roadLength = 400;
-
-function createRoad(width, length, x, z, rotationY = 0) {
-  const roadGeometry = new THREE.PlaneGeometry(width, length);
-  const roadMaterial = new THREE.MeshStandardMaterial({
+// --- CIRCUIT GENERATION ---
+const roadWidth = 12;
+const roadMaterial = new THREE.MeshStandardMaterial({
     color: 0x1a1a1a,
     roughness: 0.9,
     metalness: 0.1,
-  });
+});
 
-  const road = new THREE.Mesh(roadGeometry, roadMaterial);
-  road.rotation.x = -Math.PI / 2;
-  road.position.set(x, 0.01, z);
-  road.rotation.y = rotationY;
-  road.receiveShadow = true;
-  scene.add(road);
+// Straight sections
+const straightLength = 200;
+const straightGeometry = new THREE.PlaneGeometry(straightLength, roadWidth);
 
-  // Road markings removed for optimization
-  return road;
-}
+const straight1 = new THREE.Mesh(straightGeometry, roadMaterial);
+straight1.rotation.x = -Math.PI / 2;
+straight1.position.set(0, 0.01, 50); // z position is radius of curve
+scene.add(straight1);
 
-// Main roads
-createRoad(roadLength, mainRoadWidth, 0, 0, 0);
-createRoad(mainRoadWidth, roadLength, 0, 0, 0);
+const straight2 = new THREE.Mesh(straightGeometry, roadMaterial);
+straight2.rotation.x = -Math.PI / 2;
+straight2.position.set(0, 0.01, -50); // z position is -radius of curve
+scene.add(straight2);
 
-// Smaller roads
-for (let i = -180; i <= 180; i += 40) {
-  if (Math.abs(i) > mainRoadWidth / 2) {
-    createRoad(roadLength, smallRoadWidth, 0, i, 0);
-    createRoad(smallRoadWidth, roadLength, i, 0, 0);
-  }
-}
+// Curved sections
+const curveRadius = 50 - roadWidth / 2;
+const curveGeometry = new THREE.RingGeometry(curveRadius, curveRadius + roadWidth, 32, 1, 0, Math.PI);
+
+const curve1 = new THREE.Mesh(curveGeometry, roadMaterial);
+curve1.rotation.x = -Math.PI / 2;
+curve1.rotation.z = Math.PI / 2;
+curve1.position.set(straightLength / 2, 0.01, 0);
+scene.add(curve1);
+
+const curve2 = new THREE.Mesh(curveGeometry, roadMaterial);
+curve2.rotation.x = -Math.PI / 2;
+curve2.rotation.z = -Math.PI / 2;
+curve2.position.set(-straightLength / 2, 0.01, 0);
+scene.add(curve2);
 
 // --- CITY & BUILDING GENERATION ---
 const buildings = [];
@@ -136,7 +138,7 @@ loader.load("d:\\ccity_building_set_1.glb", (gltf) => {
   const center = box.getCenter(new THREE.Vector3());
   sourceBuilding.position.sub(center);
 
-  const buildingCount = 50;
+  const buildingCount = 0;
   for (let i = 0; i < buildingCount; i++) {
     let positionFound = false;
     let x, z;
@@ -186,52 +188,7 @@ loader.load(
   }
 );
 
-// --- SPECIAL APARTMENT ---
-loader.load(
-  "assets/models/GEDUNG APARTEMENT.glb",
-  (gltf) => {
-    const apartment = gltf.scene;
 
-    // --- Styling and Shadow ---
-    apartment.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-
-    // --- Sizing and Positioning ---
-    const apartmentScale = 15; // Adjust scale as needed
-    apartment.scale.set(apartmentScale, apartmentScale, apartmentScale);
-
-    // Ensure position is reset before calculating bounding box for proper placement
-    apartment.position.set(0, 0, 0);
-    apartment.updateMatrixWorld(true); // Ensure world matrix is updated for correct bounding box
-
-    const box = new THREE.Box3().setFromObject(apartment);
-    const size = box.getSize(new THREE.Vector3());
-    const min = box.min.y;
-
-    // Position the apartment.
-    // Shift it up by -min.y to place its lowest point at y=0.
-    apartment.position.set(20, -min, 20);
-
-    scene.add(apartment);
-
-    // Add to buildings array for collision avoidance with other generated buildings
-    buildings.push({
-      position: apartment.position,
-      geometry: { parameters: { width: size.x } },
-    });
-  },
-  undefined,
-  (error) => {
-    console.error(
-      "An error happened while loading the apartment model:",
-      error
-    );
-  }
-);
 
 // --- CONTROLS ---
 const keyboardState = {};

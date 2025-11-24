@@ -136,7 +136,7 @@ loader.load("d:\\ccity_building_set_1.glb", (gltf) => {
   const center = box.getCenter(new THREE.Vector3());
   sourceBuilding.position.sub(center);
 
-  const buildingCount = 150;
+  const buildingCount = 50;
   for (let i = 0; i < buildingCount; i++) {
     let positionFound = false;
     let x, z;
@@ -169,7 +169,6 @@ loader.load("d:\\ccity_building_set_1.glb", (gltf) => {
 
 // --- CAR ---
 let car;
-let specialApartment;
 loader.load(
   "assets/car.glb",
   (gltf) => {
@@ -191,8 +190,8 @@ loader.load(
 loader.load(
   "assets/models/GEDUNG APARTEMENT.glb",
   (gltf) => {
-    specialApartment = gltf.scene;
-    
+    const apartment = gltf.scene;
+
     // --- Styling and Shadow ---
     apartment.traverse((child) => {
       if (child.isMesh) {
@@ -206,28 +205,31 @@ loader.load(
     apartment.scale.set(apartmentScale, apartmentScale, apartmentScale);
 
     // Ensure position is reset before calculating bounding box for proper placement
-    apartment.position.set(0, 0, 0); 
+    apartment.position.set(0, 0, 0);
     apartment.updateMatrixWorld(true); // Ensure world matrix is updated for correct bounding box
 
     const box = new THREE.Box3().setFromObject(apartment);
     const size = box.getSize(new THREE.Vector3());
     const min = box.min.y;
 
-    // Position the apartment. 
+    // Position the apartment.
     // Shift it up by -min.y to place its lowest point at y=0.
     apartment.position.set(20, -min, 20);
 
     scene.add(apartment);
-    
+
     // Add to buildings array for collision avoidance with other generated buildings
     buildings.push({
-        position: apartment.position,
-        geometry: { parameters: { width: size.x } },
+      position: apartment.position,
+      geometry: { parameters: { width: size.x } },
     });
   },
   undefined,
   (error) => {
-    console.error("An error happened while loading the apartment model:", error);
+    console.error(
+      "An error happened while loading the apartment model:",
+      error
+    );
   }
 );
 
@@ -259,18 +261,12 @@ function updateCar() {
 
 // --- CAMERA ---
 function updateCamera() {
-  if (specialApartment) {
-    camera.position.set(specialApartment.position.x + 20, specialApartment.position.y + 10, specialApartment.position.z + 20); // Position camera near apartment
-    camera.lookAt(specialApartment.position); // Look at the apartment
-  } else if (!car) {
-    return;
-  } else {
-    const cameraOffset = new THREE.Vector3(0, 5, -10);
-    cameraOffset.applyQuaternion(car.quaternion);
-    cameraOffset.add(car.position);
-    camera.position.lerp(cameraOffset, 0.1);
-    camera.lookAt(car.position);
-  }
+  if (!car) return;
+  const cameraOffset = new THREE.Vector3(0, 5, -10);
+  cameraOffset.applyQuaternion(car.quaternion);
+  cameraOffset.add(car.position);
+  camera.position.lerp(cameraOffset, 0.1);
+  camera.lookAt(car.position);
 }
 
 // --- RESIZE ---

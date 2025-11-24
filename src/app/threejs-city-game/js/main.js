@@ -169,6 +169,7 @@ loader.load("d:\\ccity_building_set_1.glb", (gltf) => {
 
 // --- CAR ---
 let car;
+let specialApartment;
 loader.load(
   "assets/car.glb",
   (gltf) => {
@@ -190,7 +191,7 @@ loader.load(
 loader.load(
   "assets/models/GEDUNG APARTEMENT.glb",
   (gltf) => {
-    const apartment = gltf.scene;
+    specialApartment = gltf.scene;
     
     // --- Styling and Shadow ---
     apartment.traverse((child) => {
@@ -258,12 +259,18 @@ function updateCar() {
 
 // --- CAMERA ---
 function updateCamera() {
-  if (!car) return;
-  const cameraOffset = new THREE.Vector3(0, 5, -10);
-  cameraOffset.applyQuaternion(car.quaternion);
-  cameraOffset.add(car.position);
-  camera.position.lerp(cameraOffset, 0.1);
-  camera.lookAt(car.position);
+  if (specialApartment) {
+    camera.position.set(specialApartment.position.x + 20, specialApartment.position.y + 10, specialApartment.position.z + 20); // Position camera near apartment
+    camera.lookAt(specialApartment.position); // Look at the apartment
+  } else if (!car) {
+    return;
+  } else {
+    const cameraOffset = new THREE.Vector3(0, 5, -10);
+    cameraOffset.applyQuaternion(car.quaternion);
+    cameraOffset.add(car.position);
+    camera.position.lerp(cameraOffset, 0.1);
+    camera.lookAt(car.position);
+  }
 }
 
 // --- RESIZE ---

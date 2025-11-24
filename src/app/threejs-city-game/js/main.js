@@ -204,17 +204,17 @@ loader.load(
     const apartmentScale = 15; // Adjust scale as needed
     apartment.scale.set(apartmentScale, apartmentScale, apartmentScale);
 
-    // Center the model geometry
-    const box = new THREE.Box3().setFromObject(apartment);
-    const center = box.getCenter(new THREE.Vector3());
-    apartment.position.sub(center); 
+    // Ensure position is reset before calculating bounding box for proper placement
+    apartment.position.set(0, 0, 0); 
+    apartment.updateMatrixWorld(true); // Ensure world matrix is updated for correct bounding box
 
-    // Get the height of the model after scaling
+    const box = new THREE.Box3().setFromObject(apartment);
     const size = box.getSize(new THREE.Vector3());
-    const height = size.y;
-    
-    // Position the apartment
-    apartment.position.set(20, height / 2, 20); // x=20, z=20, y is half of height
+    const min = box.min.y;
+
+    // Position the apartment. 
+    // Shift it up by -min.y to place its lowest point at y=0.
+    apartment.position.set(20, -min, 20);
 
     scene.add(apartment);
     

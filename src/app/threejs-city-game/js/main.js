@@ -9,7 +9,7 @@ const camera = new THREE.PerspectiveCamera(
   75,
   window.innerWidth / window.innerHeight,
   0.1,
-  2000 // Increased far plane for larger map
+  1000 // OPTIMIZATION: Reduced far plane
 );
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -22,14 +22,14 @@ const ambientLight = new THREE.AmbientLight(0x404040, 2.0);
 scene.add(ambientLight);
 
 const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-directionalLight.position.set(20, 40, 20); // Adjusted for larger map
+directionalLight.position.set(20, 40, 20);
 directionalLight.castShadow = true;
-directionalLight.shadow.mapSize.width = 1024;
-directionalLight.shadow.mapSize.height = 1024;
+// OPTIMIZATION: Reduced shadow map resolution
+directionalLight.shadow.mapSize.width = 512;
+directionalLight.shadow.mapSize.height = 512;
 directionalLight.shadow.camera.near = 0.5;
-directionalLight.shadow.camera.far = 100; // Adjusted for larger map
+directionalLight.shadow.camera.far = 100;
 scene.add(directionalLight);
-
 
 // --- GROUND ---
 const groundGeometry = new THREE.PlaneGeometry(400, 400); // Increased map size
@@ -44,9 +44,9 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 // --- ROAD GENERATION ---
-const mainRoadWidth = 12; // Narrower road
-const smallRoadWidth = 8;  // Narrower road
-const roadLength = 400;    // Increased length for larger map
+const mainRoadWidth = 12;
+const smallRoadWidth = 8;
+const roadLength = 400;
 
 function createRoad(width, length, x, z, rotationY = 0) {
   const roadGeometry = new THREE.PlaneGeometry(width, length);
@@ -62,8 +62,8 @@ function createRoad(width, length, x, z, rotationY = 0) {
   road.rotation.y = rotationY;
   road.receiveShadow = true;
   scene.add(road);
-  
-  // Road markings are simplified for performance on larger map
+
+  // Road markings removed for optimization
   return road;
 }
 
@@ -71,7 +71,7 @@ function createRoad(width, length, x, z, rotationY = 0) {
 createRoad(roadLength, mainRoadWidth, 0, 0, 0);
 createRoad(mainRoadWidth, roadLength, 0, 0, 0);
 
-// Smaller roads with adjusted spacing for larger map
+// Smaller roads
 for (let i = -180; i <= 180; i += 40) {
   if (Math.abs(i) > mainRoadWidth / 2) {
     createRoad(roadLength, smallRoadWidth, 0, i, 0);
@@ -84,7 +84,9 @@ const buildings = [];
 const loader = new GLTFLoader();
 
 function applyCityStyle(object) {
-  const colors = [0x808080, 0xA9A9A9, 0x696969, 0x778899, 0xCD853F, 0x8B4513, 0x4682B4];
+  const colors = [
+    0x808080, 0xa9a9a9, 0x696969, 0x778899, 0xcd853f, 0x8b4513, 0x4682b4,
+  ];
   object.traverse((child) => {
     if (child.isMesh) {
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
@@ -100,14 +102,14 @@ function applyCityStyle(object) {
 }
 
 function isValidBuildingPosition(x, z, width, depth) {
-  const roadMargin = 4; // Slightly larger margin for narrower roads
+  const roadMargin = 4;
   const mainRoadHalf = mainRoadWidth / 2 + roadMargin;
   const smallRoadHalf = smallRoadWidth / 2 + roadMargin;
 
   if (Math.abs(x) < mainRoadHalf || Math.abs(z) < mainRoadHalf) return false;
 
   for (let i = -180; i <= 180; i += 40) {
-    if (Math.abs(i) > mainRoadWidth / 2) {
+    if (Math.abs(i) > mainRoadHalf) {
       if (Math.abs(z - i) < smallRoadHalf) return false;
       if (Math.abs(x - i) < smallRoadHalf) return false;
     }
@@ -115,7 +117,9 @@ function isValidBuildingPosition(x, z, width, depth) {
 
   const minDistance = 5;
   for (const other of buildings) {
-    const dist = Math.sqrt((x - other.position.x) ** 2 + (z - other.position.z) ** 2);
+    const dist = Math.sqrt(
+      (x - other.position.x) ** 2 + (z - other.position.z) ** 2
+    );
     if (dist < minDistance + width / 2 + other.geometry.parameters.width / 2) {
       return false;
     }
@@ -124,7 +128,7 @@ function isValidBuildingPosition(x, z, width, depth) {
   return true;
 }
 
-loader.load("assets/GEDUNG APARTEMENT.glb", (gltf) => {
+loader.load("d:\\ccity_building_set_1.glb", (gltf) => {
   const sourceBuilding = gltf.scene;
   applyCityStyle(sourceBuilding);
 
@@ -132,24 +136,23 @@ loader.load("assets/GEDUNG APARTEMENT.glb", (gltf) => {
   const center = box.getCenter(new THREE.Vector3());
   sourceBuilding.position.sub(center);
 
-  const buildingCount = 300; // Increased building count
+  const buildingCount = 150;
   for (let i = 0; i < buildingCount; i++) {
     let positionFound = false;
     let x, z;
     const buildingWidth = Math.random() * 8 + 6;
     const buildingDepth = Math.random() * 8 + 6;
-    const buildingHeight = Math.random() * 40 + 15; // Taller buildings
-    
-    for (let attempt = 0; attempt < 30; attempt++) {
-      // Adjusted random range for larger map
-      x = Math.random() * 380 - 190; 
+    const buildingHeight = Math.random() * 40 + 15;
+
+    for (let attempt = 0; attempt < 20; attempt++) {
+      x = Math.random() * 380 - 190;
       z = Math.random() * 380 - 190;
       if (isValidBuildingPosition(x, z, buildingWidth, buildingDepth)) {
         positionFound = true;
         break;
       }
     }
-    
+
     if (positionFound) {
       const newBuilding = sourceBuilding.clone(true);
       newBuilding.scale.set(buildingWidth, buildingHeight, buildingDepth);
@@ -166,24 +169,29 @@ loader.load("assets/GEDUNG APARTEMENT.glb", (gltf) => {
 
 // --- CAR ---
 let car;
-loader.load("assets/car.glb", (gltf) => {
+loader.load(
+  "assets/car.glb",
+  (gltf) => {
     car = gltf.scene;
     car.scale.set(2, 2, 2);
     car.position.y = 0;
     car.traverse((child) => {
-        if (child.isMesh) child.castShadow = true;
+      if (child.isMesh) child.castShadow = true;
     });
     scene.add(car);
-}, undefined, (error) => {
+  },
+  undefined,
+  (error) => {
     console.error("An error happened while loading the car model:", error);
-});
+  }
+);
 
 // --- CONTROLS ---
 const keyboardState = {};
 window.addEventListener("keydown", (e) => (keyboardState[e.code] = true));
 window.addEventListener("keyup", (e) => (keyboardState[e.code] = false));
 
-const speed = 0.4; // Slightly increased speed
+const speed = 0.4;
 const rotationSpeed = 0.04;
 
 function updateCar() {

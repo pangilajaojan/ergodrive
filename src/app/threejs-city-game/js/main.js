@@ -186,6 +186,50 @@ loader.load(
   }
 );
 
+// --- SPECIAL APARTMENT ---
+loader.load(
+  "assets/models/GEDUNG APARTEMENT.glb",
+  (gltf) => {
+    const apartment = gltf.scene;
+    
+    // --- Styling and Shadow ---
+    apartment.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    // --- Sizing and Positioning ---
+    const apartmentScale = 15; // Adjust scale as needed
+    apartment.scale.set(apartmentScale, apartmentScale, apartmentScale);
+
+    // Center the model geometry
+    const box = new THREE.Box3().setFromObject(apartment);
+    const center = box.getCenter(new THREE.Vector3());
+    apartment.position.sub(center); 
+
+    // Get the height of the model after scaling
+    const size = box.getSize(new THREE.Vector3());
+    const height = size.y;
+    
+    // Position the apartment
+    apartment.position.set(20, height / 2, 20); // x=20, z=20, y is half of height
+
+    scene.add(apartment);
+    
+    // Add to buildings array for collision avoidance with other generated buildings
+    buildings.push({
+        position: apartment.position,
+        geometry: { parameters: { width: size.x } },
+    });
+  },
+  undefined,
+  (error) => {
+    console.error("An error happened while loading the apartment model:", error);
+  }
+);
+
 // --- CONTROLS ---
 const keyboardState = {};
 window.addEventListener("keydown", (e) => (keyboardState[e.code] = true));

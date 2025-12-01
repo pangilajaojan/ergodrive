@@ -305,6 +305,52 @@ ion-accordion {
   }
 }
 
+// ========== THREE.JS SIMULATION OVERLAY (FULLSCREEN) ========== //
+.simulation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  box-sizing: border-box;
+
+  .simulation-overlay-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #fff;
+    margin-bottom: 0.75rem;
+
+    h2 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    ion-button {
+      --color: #000;
+    }
+  }
+
+  .simulation-overlay-frame {
+    flex: 1;
+    position: relative;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    background: #000;
+
+    iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+  }
+}
+
 // ========== HISTORY SECTION ========== //
 .recent-tests-section {
   @include card-style;

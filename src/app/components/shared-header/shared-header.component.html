@@ -21,6 +21,10 @@
           <ion-icon name="bed-outline"></ion-icon>
           Mulai Tes
         </ion-button>
+        <ion-button *ngIf="showSimulationButton" (click)="onSimulationClick()" fill="solid" color="tertiary" size="small">
+          <ion-icon name="car-sport-outline"></ion-icon>
+          Mulai Simulasi
+        </ion-button>
         <ion-button *ngIf="showStopTestButton" (click)="onStopTestClick()" fill="solid" color="danger" size="small">
           <ion-icon name="stop-circle-outline"></ion-icon>
           Hentikan Tes

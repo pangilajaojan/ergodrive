@@ -15,9 +15,11 @@ export class SharedHeaderComponent {
   @Input() pageSubtitle: string = '';
   @Input() showSleepTestButton: boolean = false;
   @Input() showStopTestButton: boolean = false;
+  @Input() showSimulationButton: boolean = false;
 
   @Output() sleepTestClick = new EventEmitter<void>();
   @Output() stopTestClick = new EventEmitter<void>();
+  @Output() simulationClick = new EventEmitter<void>();
 
   onSleepTestClick() {
     this.sleepTestClick.emit();
@@ -25,6 +27,10 @@ export class SharedHeaderComponent {
 
   onStopTestClick() {
     this.stopTestClick.emit();
+  }
+
+  onSimulationClick() {
+    this.simulationClick.emit();
   }
   
   openProfileModal() {

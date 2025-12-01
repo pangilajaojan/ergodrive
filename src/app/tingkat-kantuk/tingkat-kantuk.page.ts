@@ -81,6 +81,7 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   cameraReady = false;
   isTesting = false;
   isCameraOn = false;
+  isSimulationActive = false;
   testStartTime: Date | null = null;
   testDuration = 0;
   testTimer: any = null;
@@ -288,6 +289,15 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   // =========================================== 
   // ========== START/STOP TEST LOGIC ========== 
   // ===========================================
+
+  // Simulasi mengemudi (Three.js)
+  openSimulation() {
+    this.isSimulationActive = true;
+  }
+
+  closeSimulation() {
+    this.isSimulationActive = false;
+  }
 
   async startTest() {
     try {

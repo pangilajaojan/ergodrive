@@ -70,6 +70,9 @@ declare global {
 export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('video') videoElement!: ElementRef<HTMLVideoElement>;
   @ViewChild('canvas') canvasElement!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('windowHeader') windowHeader!: ElementRef<HTMLElement>;
+  @ViewChild('webcamWindowHeader') webcamWindowHeader!: ElementRef<HTMLElement>;
+  @ViewChild('simulationIframe') simulationIframe!: ElementRef<HTMLIFrameElement>;
 
   // Status variables
   drowsinessLevel = 'Belum Dimulai';
@@ -82,7 +85,23 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   isTesting = false;
   isCameraOn = false;
   isSimulationActive = false;
+  isSimulationMaximized = false;
+  isWebcamWindowOpen = false;
+  isWebcamWindowMaximized = false;
   testStartTime: Date | null = null;
+  
+  // Event listener untuk keyboard saat simulasi aktif
+  private keyboardEventListener: ((e: KeyboardEvent) => void) | null = null;
+  
+  // Window drag and resize state
+  private isDragging = false;
+  private isResizing = false;
+  private dragStartX = 0;
+  private dragStartY = 0;
+  private windowStartX = 0;
+  private windowStartY = 0;
+  private resizeDirection = '';
+  private windowElement: HTMLElement | null = null;
   testDuration = 0;
   testTimer: any = null;
   isLoadingHistory = false;
@@ -94,6 +113,8 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
 
   // EAR tracking
   private earValues: number[] = [];
+  private earHistoryForSmoothing: number[] = [];  // Untuk smoothing status
+  private smoothedEAR = 0;  // EAR yang sudah di-smooth
   private lastUpdateTime = 0;
   private readonly UPDATE_INTERVAL = 1000;
 
@@ -129,10 +150,13 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   // Settings
   settings = {
     testDuration: 300,
-    earWarningThreshold: 0.25,
-    earDangerThreshold: 0.2,
+    // Threshold yang lebih akurat untuk deteksi kantuk
+    earWarningThreshold: 0.23,  // Threshold untuk "Sadar dan Fokus" (sedikit waspada)
+    earDangerThreshold: 0.18,   // Threshold untuk "Mulai Mengantuk" (mata mulai menutup)
     enableSound: true,
     enableVibration: true,
+    // Smoothing untuk menghindari fluktuasi cepat
+    smoothingWindow: 5,  // Jumlah frame untuk smoothing
   };
 
   constructor(
@@ -147,10 +171,37 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
 
   ngAfterViewInit() {
     this.initChart();
+    this.setupWindowDragAndResize();
   }
 
   ngOnDestroy() {
     this.stopCamera();
+    this.removeKeyboardEventListener();
+  }
+  
+  // Menambahkan event listener untuk memastikan keyboard event tidak terblokir
+  private addKeyboardEventListener() {
+    if (this.keyboardEventListener) return;
+    
+    this.keyboardEventListener = (e: KeyboardEvent) => {
+      // Jika simulasi aktif, biarkan keyboard event langsung ke iframe
+      // Jangan prevent default untuk tombol game (arrow keys, WASD)
+      const gameKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC'];
+      if (this.isSimulationActive && gameKeys.includes(e.code)) {
+        // Biarkan event langsung ke iframe, jangan di-capture oleh parent
+        e.stopPropagation();
+      }
+    };
+    
+    window.addEventListener('keydown', this.keyboardEventListener, true);
+  }
+  
+  // Menghapus event listener keyboard
+  private removeKeyboardEventListener() {
+    if (this.keyboardEventListener) {
+      window.removeEventListener('keydown', this.keyboardEventListener, true);
+      this.keyboardEventListener = null;
+    }
   }
 
   // =========================================== 
@@ -290,13 +341,448 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   // ========== START/STOP TEST LOGIC ========== 
   // ===========================================
 
-  // Simulasi mengemudi (Three.js)
-  openSimulation() {
+  // Simulasi mengemudi (Three.js) dengan aktivasi webcam dan analisis kantuk
+  async openSimulation() {
+    try {
+      // Aktifkan webcam jika belum aktif
+      if (!this.isCameraOn) {
+        await this.startCamera();
+      }
+      
+      // Mulai analisis kantuk (sama seperti startTest)
+      this.isTesting = true;
+      this.testStartTime = new Date();
+      this.testDuration = 0;
+      this.averageEAR = 0;
+      this.drowsyCount = 0;
+      this.earValues = [];
+      this.earHistoryForSmoothing = [];
+      this.smoothedEAR = 0;
+      this.statusMessage = 'MULAI';
+      this.statusClass = 'normal';
+      this.statusIcon = 'play';
+      this.statusColor = 'primary';
+      this.drowsinessLevel = 'MULAI';
+
+      this.initChart();
+
+      this.stopTestTimer();
+      this.testTimer = setInterval(() => {
+        if (this.isTesting && this.testStartTime) {
+          this.testDuration++;
+          if (this.earValues.length > 0) {
+            const sum = this.earValues.reduce((a, b) => a + b, 0);
+            this.averageEAR = sum / this.earValues.length;
+            this.earValues = [];
+          }
+        }
+      }, 1000);
+
+      // Mulai deteksi wajah dan analisis kantuk
+      await this.startFaceMesh();
+      
+      // Buka simulasi Three.js sebagai layar utama (fullscreen)
     this.isSimulationActive = true;
+      
+      // Buka webcam sebagai window yang dapat di-resize
+      this.isWebcamWindowOpen = true;
+      
+      // Tambahkan keyboard event listener untuk memastikan input tidak terblokir
+      this.addKeyboardEventListener();
+      
+      // Setup drag and resize setelah window muncul
+      setTimeout(() => {
+        this.setupWebcamWindowDragAndResize();
+        // Focus ke iframe setelah dimuat untuk memastikan keyboard input langsung bekerja
+        this.focusSimulationIframe();
+      }, 300);
+      
+      await this.presentToast('Simulasi dimulai dengan deteksi kantuk aktif', 'success');
+    } catch (error) {
+      console.error('Gagal memulai simulasi:', error);
+      this.statusDescription = 'Gagal memulai simulasi (kamera error)';
+      this.statusClass = 'danger';
+      this.isTesting = false;
+      await this.presentToast('Gagal memulai simulasi', 'danger');
+    }
   }
 
-  closeSimulation() {
+  // Handler saat iframe simulasi selesai dimuat
+  onSimulationIframeLoad() {
+    // Focus ke iframe setelah dimuat untuk memastikan keyboard input langsung bekerja
+    setTimeout(() => {
+      this.focusSimulationIframe();
+    }, 100);
+  }
+
+  // Focus ke iframe simulasi untuk memastikan keyboard input langsung bekerja
+  private focusSimulationIframe() {
+    try {
+      const iframe = this.simulationIframe?.nativeElement;
+      if (iframe) {
+        // Focus ke iframe element
+        iframe.focus();
+        // Coba focus ke content window jika memungkinkan (mungkin terblokir cross-origin)
+        try {
+          if (iframe.contentWindow) {
+            iframe.contentWindow.focus();
+          }
+        } catch (e) {
+          // Cross-origin error tidak masalah, keyboard event tetap bekerja
+        }
+      }
+    } catch (error) {
+      console.log('Focus iframe error (non-critical):', error);
+    }
+  }
+
+  // Setup drag and resize functionality untuk window
+  private setupWindowDragAndResize() {
+    // Setup akan dilakukan setelah view diinisialisasi
+    setTimeout(() => {
+      if (this.windowHeader?.nativeElement) {
+        this.initWindowDrag();
+        this.initWindowResize();
+      }
+    }, 100);
+  }
+
+  private initWindowDrag() {
+    const header = this.windowHeader?.nativeElement;
+    if (!header) return;
+
+    header.addEventListener('mousedown', (e: Event) => {
+      const mouseEvent = e as MouseEvent;
+      if (this.isSimulationMaximized) return;
+      
+      const windowEl = header.closest('.simulation-window') as HTMLElement;
+      if (!windowEl) return;
+
+      this.isDragging = true;
+      this.dragStartX = mouseEvent.clientX;
+      this.dragStartY = mouseEvent.clientY;
+      
+      const rect = windowEl.getBoundingClientRect();
+      this.windowStartX = rect.left;
+      this.windowStartY = rect.top;
+      this.windowElement = windowEl;
+
+      document.addEventListener('mousemove', this.handleDrag);
+      document.addEventListener('mouseup', this.stopDrag);
+    });
+  }
+
+  private handleDrag = (e: Event) => {
+    const mouseEvent = e as MouseEvent;
+    if (!this.isDragging || !this.windowElement || this.isSimulationMaximized) return;
+
+    const deltaX = mouseEvent.clientX - this.dragStartX;
+    const deltaY = mouseEvent.clientY - this.dragStartY;
+
+    let newX = this.windowStartX + deltaX;
+    let newY = this.windowStartY + deltaY;
+
+    // Batasi window agar tidak keluar dari viewport
+    const maxX = window.innerWidth - this.windowElement.offsetWidth;
+    const maxY = window.innerHeight - this.windowElement.offsetHeight;
+
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+
+    this.windowElement.style.left = `${newX}px`;
+    this.windowElement.style.top = `${newY}px`;
+    this.windowElement.style.transform = 'none';
+  };
+
+  private stopDrag = () => {
+    this.isDragging = false;
+    document.removeEventListener('mousemove', this.handleDrag);
+    document.removeEventListener('mouseup', this.stopDrag);
+  };
+
+  private initWindowResize() {
+    const handles = document.querySelectorAll('.resize-handle');
+    handles.forEach(handle => {
+      handle.addEventListener('mousedown', (e: Event) => {
+        const mouseEvent = e as MouseEvent;
+        if (this.isSimulationMaximized) return;
+        
+        mouseEvent.preventDefault();
+        this.isResizing = true;
+        this.resizeDirection = (handle as HTMLElement).classList[1] || '';
+        
+        const windowEl = handle.closest('.simulation-window') as HTMLElement;
+        if (!windowEl) return;
+
+        this.dragStartX = mouseEvent.clientX;
+        this.dragStartY = mouseEvent.clientY;
+        this.windowStartX = windowEl.offsetWidth;
+        this.windowStartY = windowEl.offsetHeight;
+        this.windowElement = windowEl;
+
+        document.addEventListener('mousemove', this.handleResize);
+        document.addEventListener('mouseup', this.stopResize);
+      });
+    });
+  }
+
+  private handleResize = (e: Event) => {
+    const mouseEvent = e as MouseEvent;
+    if (!this.isResizing || !this.windowElement || this.isSimulationMaximized) return;
+
+    const deltaX = mouseEvent.clientX - this.dragStartX;
+    const deltaY = mouseEvent.clientY - this.dragStartY;
+
+    let newWidth = this.windowStartX;
+    let newHeight = this.windowStartY;
+    let newLeft = this.windowElement.offsetLeft;
+    let newTop = this.windowElement.offsetTop;
+
+    const minWidth = 400;
+    const minHeight = 300;
+
+    if (this.resizeDirection.includes('right')) {
+      newWidth = Math.max(minWidth, this.windowStartX + deltaX);
+    }
+    if (this.resizeDirection.includes('left')) {
+      newWidth = Math.max(minWidth, this.windowStartX - deltaX);
+      newLeft = this.windowStartX - (newWidth - this.windowStartX);
+    }
+    if (this.resizeDirection.includes('bottom')) {
+      newHeight = Math.max(minHeight, this.windowStartY + deltaY);
+    }
+    if (this.resizeDirection.includes('top')) {
+      newHeight = Math.max(minHeight, this.windowStartY - deltaY);
+      newTop = this.windowStartY - (newHeight - this.windowStartY);
+    }
+
+    // Batasi ukuran maksimal
+    newWidth = Math.min(newWidth, window.innerWidth - newLeft);
+    newHeight = Math.min(newHeight, window.innerHeight - newTop);
+
+    this.windowElement.style.width = `${newWidth}px`;
+    this.windowElement.style.height = `${newHeight}px`;
+    if (this.resizeDirection.includes('left')) {
+      this.windowElement.style.left = `${newLeft}px`;
+    }
+    if (this.resizeDirection.includes('top')) {
+      this.windowElement.style.top = `${newTop}px`;
+    }
+    this.windowElement.style.transform = 'none';
+  };
+
+  private stopResize = () => {
+    this.isResizing = false;
+    document.removeEventListener('mousemove', this.handleResize);
+    document.removeEventListener('mouseup', this.stopResize);
+  };
+
+  // Toggle maximize/minimize webcam window
+  toggleWebcamWindowMaximize() {
+    this.isWebcamWindowMaximized = !this.isWebcamWindowMaximized;
+    
+    // Reset posisi ke kanan bawah saat minimize
+    if (!this.isWebcamWindowMaximized) {
+      setTimeout(() => {
+        const webcamWindow = document.querySelector('.webcam-window') as HTMLElement;
+        if (webcamWindow) {
+          webcamWindow.style.left = '';
+          webcamWindow.style.top = '';
+          webcamWindow.style.bottom = '20px';
+          webcamWindow.style.right = '20px';
+          webcamWindow.style.transform = 'none';
+        }
+      }, 100);
+    }
+  }
+
+  // Tutup webcam window
+  closeWebcamWindow() {
+    this.isWebcamWindowOpen = false;
+    this.isWebcamWindowMaximized = false;
+  }
+
+  // Setup drag and resize untuk webcam window
+  private setupWebcamWindowDragAndResize() {
+    setTimeout(() => {
+      if (this.webcamWindowHeader?.nativeElement) {
+        this.initWebcamWindowDrag();
+        this.initWebcamWindowResize();
+      }
+    }, 100);
+  }
+
+  private initWebcamWindowDrag() {
+    const header = this.webcamWindowHeader?.nativeElement;
+    if (!header) return;
+
+    header.addEventListener('mousedown', (e: Event) => {
+      const mouseEvent = e as MouseEvent;
+      if (this.isWebcamWindowMaximized) return;
+      
+      const windowEl = header.closest('.webcam-window') as HTMLElement;
+      if (!windowEl) return;
+
+      this.isDragging = true;
+      this.dragStartX = mouseEvent.clientX;
+      this.dragStartY = mouseEvent.clientY;
+      
+      const rect = windowEl.getBoundingClientRect();
+      this.windowStartX = rect.left;
+      this.windowStartY = rect.top;
+      this.windowElement = windowEl;
+
+      document.addEventListener('mousemove', this.handleWebcamDrag);
+      document.addEventListener('mouseup', this.stopWebcamDrag);
+    });
+  }
+
+  private handleWebcamDrag = (e: Event) => {
+    const mouseEvent = e as MouseEvent;
+    if (!this.isDragging || !this.windowElement || this.isWebcamWindowMaximized) return;
+
+    const deltaX = mouseEvent.clientX - this.dragStartX;
+    const deltaY = mouseEvent.clientY - this.dragStartY;
+
+    let newX = this.windowStartX + deltaX;
+    let newY = this.windowStartY + deltaY;
+
+    const maxX = window.innerWidth - this.windowElement.offsetWidth;
+    const maxY = window.innerHeight - this.windowElement.offsetHeight;
+
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+
+    this.windowElement.style.left = `${newX}px`;
+    this.windowElement.style.top = `${newY}px`;
+    this.windowElement.style.transform = 'none';
+  };
+
+  private stopWebcamDrag = () => {
+    this.isDragging = false;
+    document.removeEventListener('mousemove', this.handleWebcamDrag);
+    document.removeEventListener('mouseup', this.stopWebcamDrag);
+  };
+
+  private initWebcamWindowResize() {
+    setTimeout(() => {
+      const handles = document.querySelectorAll('.webcam-window .resize-handle');
+      handles.forEach(handle => {
+        handle.addEventListener('mousedown', (e: Event) => {
+          const mouseEvent = e as MouseEvent;
+          if (this.isWebcamWindowMaximized) return;
+          
+          mouseEvent.preventDefault();
+          this.isResizing = true;
+          this.resizeDirection = (handle as HTMLElement).classList[1] || '';
+          
+          const windowEl = handle.closest('.webcam-window') as HTMLElement;
+          if (!windowEl) return;
+
+          this.dragStartX = mouseEvent.clientX;
+          this.dragStartY = mouseEvent.clientY;
+          const rect = windowEl.getBoundingClientRect();
+          this.windowStartX = rect.width;
+          this.windowStartY = rect.height;
+          this.windowElement = windowEl;
+
+          document.addEventListener('mousemove', this.handleWebcamResize);
+          document.addEventListener('mouseup', this.stopWebcamResize);
+        });
+      });
+    }, 100);
+  }
+
+  private handleWebcamResize = (e: Event) => {
+    const mouseEvent = e as MouseEvent;
+    if (!this.isResizing || !this.windowElement || this.isWebcamWindowMaximized) return;
+
+    const deltaX = mouseEvent.clientX - this.dragStartX;
+    const deltaY = mouseEvent.clientY - this.dragStartY;
+
+    let newWidth = this.windowStartX;
+    let newHeight = this.windowStartY;
+    let newLeft = this.windowElement.offsetLeft;
+    let newTop = this.windowElement.offsetTop;
+
+    const minWidth = 250;
+    const minHeight = 200;
+
+    if (this.resizeDirection.includes('right')) {
+      newWidth = Math.max(minWidth, this.windowStartX + deltaX);
+    }
+    if (this.resizeDirection.includes('left')) {
+      newWidth = Math.max(minWidth, this.windowStartX - deltaX);
+      newLeft = this.windowStartX - (newWidth - this.windowStartX);
+    }
+    if (this.resizeDirection.includes('bottom')) {
+      newHeight = Math.max(minHeight, this.windowStartY + deltaY);
+    }
+    if (this.resizeDirection.includes('top')) {
+      newHeight = Math.max(minHeight, this.windowStartY - deltaY);
+      newTop = this.windowStartY - (newHeight - this.windowStartY);
+    }
+
+    newWidth = Math.min(newWidth, window.innerWidth - newLeft);
+    newHeight = Math.min(newHeight, window.innerHeight - newTop);
+
+    this.windowElement.style.width = `${newWidth}px`;
+    this.windowElement.style.height = `${newHeight}px`;
+    if (this.resizeDirection.includes('left')) {
+      this.windowElement.style.left = `${newLeft}px`;
+    }
+    if (this.resizeDirection.includes('top')) {
+      this.windowElement.style.top = `${newTop}px`;
+    }
+    this.windowElement.style.transform = 'none';
+  };
+
+  private stopWebcamResize = () => {
+    this.isResizing = false;
+    document.removeEventListener('mousemove', this.handleWebcamResize);
+    document.removeEventListener('mouseup', this.stopWebcamResize);
+  };
+
+  async closeSimulation() {
+    try {
+      // Jika tes sedang berjalan, hentikan tes dan tampilkan summary
+      if (this.isTesting) {
+        this.isTesting = false;
+        this.stopTestTimer();
+        
+        // Tampilkan summary analisis sebelum menutup
+        await this.showTestSummary();
+        
+        // Update status
+        this.statusMessage = 'Tes Selesai';
+        this.statusClass = 'success';
+        this.statusIcon = 'stop-circle';
+        this.statusColor = 'success';
+        this.statusDescription = `Tes Selesai. EAR Rata-rata: ${this.averageEAR.toFixed(3)}`;
+      }
+      
+      // Matikan webcam
+      if (this.isCameraOn) {
+        await this.stopCamera();
+      }
+      
+      // Tutup simulasi dan webcam window, reset maximize state
     this.isSimulationActive = false;
+      this.isSimulationMaximized = false;
+      this.isWebcamWindowOpen = false;
+      this.isWebcamWindowMaximized = false;
+      
+      // Hapus keyboard event listener
+      this.removeKeyboardEventListener();
+      
+      // Tampilkan notifikasi bahwa simulasi ditutup
+      await this.presentToast('Simulasi ditutup. Data analisis telah disimpan.', 'success');
+    } catch (error) {
+      console.error('Error closing simulation:', error);
+      this.isSimulationActive = false;
+      this.isSimulationMaximized = false;
+      await this.presentToast('Gagal menutup simulasi', 'danger');
+    }
   }
 
   async startTest() {
@@ -310,10 +796,13 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.averageEAR = 0;
       this.drowsyCount = 0;
       this.earValues = [];
-      this.statusMessage = 'Tes Berjalan';
+      this.earHistoryForSmoothing = [];
+      this.smoothedEAR = 0;
+      this.statusMessage = 'MULAI';
       this.statusClass = 'normal';
       this.statusIcon = 'play';
       this.statusColor = 'primary';
+      this.drowsinessLevel = 'MULAI';
 
       this.initChart();
 
@@ -347,6 +836,11 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     this.statusIcon = 'stop-circle';
     this.statusColor = 'success';
     this.statusDescription = `Tes Selesai. EAR Rata-rata: ${this.averageEAR.toFixed(3)}`;
+    
+    // Tutup simulasi jika sedang berjalan
+    if (this.isSimulationActive) {
+      this.isSimulationActive = false;
+    }
   }
 
   resetTest() {
@@ -357,6 +851,8 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.drowsyCount = 0;
       this.earValues = [];
       this.earHistory = [];
+      this.earHistoryForSmoothing = [];
+      this.smoothedEAR = 0;
       this.statusMessage = 'Belum Memulai';
       this.statusClass = 'normal';
       this.statusIcon = 'time-outline';
@@ -569,13 +1065,16 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   getStatusBadgeColor(status: string): string {
     if (!status) return 'medium';
     
-    const statusLower = status.toLowerCase();
-    if (statusLower.includes('normal')) {
-      return 'success';
-    } else if (statusLower.includes('sadar') && statusLower.includes('fokus')) {
-      return 'warning';
-    } else if (statusLower.includes('mengantuk')) {
+    const statusUpper = status.toUpperCase();
+    // Prioritas: MULAI MENGANTUK > SADAR DAN FOKUS > NORMAL > MULAI
+    if (statusUpper.includes('MULAI MENGANTUK')) {
       return 'danger';
+    } else if (statusUpper.includes('SADAR') && statusUpper.includes('FOKUS')) {
+      return 'warning';
+    } else if (statusUpper.includes('NORMAL')) {
+      return 'success';
+    } else if (statusUpper.includes('MULAI')) {
+      return 'primary';
     }
     return 'medium';
   }
@@ -597,10 +1096,15 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private getDrowsinessLevel(): string {
-    if (this.testStats.avgEAR < this.settings.earDangerThreshold)
+    // Gunakan smoothed EAR jika tersedia, jika tidak gunakan average EAR
+    const earToCheck = this.smoothedEAR > 0 ? this.smoothedEAR : this.testStats.avgEAR;
+    
+    if (earToCheck < this.settings.earDangerThreshold)
       return 'MULAI MENGANTUK';
-    if (this.testStats.avgEAR < this.settings.earWarningThreshold)
+    if (earToCheck < this.settings.earWarningThreshold)
       return 'SADAR DAN FOKUS';
+    if (earToCheck === 0 || this.testDuration === 0)
+      return 'MULAI';
     return 'NORMAL';
   }
 
@@ -681,15 +1185,33 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
 
   private updateStatus(ear: number) {
     if (!this.isTesting) {
-      this.drowsinessLevel = 'Siap untuk memulai tes';
+      this.drowsinessLevel = 'MULAI';
       this.statusDescription = `EAR: ${ear.toFixed(3)} | Status: Siap Memulai`;
+      this.statusClass = 'normal';
+      this.statusMessage = 'MULAI';
+      this.statusIcon = 'play-circle';
+      this.statusColor = 'primary';
       return;
     }
 
+    // Tambahkan EAR ke history untuk smoothing (menghindari fluktuasi cepat)
+    this.earHistoryForSmoothing.push(ear);
+    if (this.earHistoryForSmoothing.length > this.settings.smoothingWindow) {
+      this.earHistoryForSmoothing.shift();
+    }
+
+    // Hitung smoothed EAR (rata-rata dari beberapa frame terakhir untuk akurasi lebih baik)
+    const sum = this.earHistoryForSmoothing.reduce((a, b) => a + b, 0);
+    this.smoothedEAR = this.earHistoryForSmoothing.length > 0 
+      ? sum / this.earHistoryForSmoothing.length 
+      : ear;
+
+    // Gunakan smoothed EAR untuk menentukan status (lebih akurat dan stabil)
+    const earForStatus = this.smoothedEAR;
     const previousStatus = this.drowsinessLevel;
     
-    // Mulai Mengantuk (Danger)
-    if (ear < this.settings.earDangerThreshold) {
+    // Status: MULAI MENGANTUK (Danger) - EAR sangat rendah, mata hampir tertutup
+    if (earForStatus < this.settings.earDangerThreshold) {
       this.drowsinessLevel = 'MULAI MENGANTUK';
       this.statusClass = 'danger';
       this.statusMessage = 'Mulai Mengantuk';
@@ -700,8 +1222,8 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
         this.drowsyCount++;
       }
     } 
-    // Sadar dan Fokus (Warning)
-    else if (ear < this.settings.earWarningThreshold) {
+    // Status: SADAR DAN FOKUS (Warning) - EAR menurun, perlu waspada
+    else if (earForStatus < this.settings.earWarningThreshold) {
       this.drowsinessLevel = 'SADAR DAN FOKUS';
       this.statusClass = 'warning';
       this.statusMessage = 'Sadar dan Fokus';
@@ -709,7 +1231,7 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.statusColor = 'warning';
       this.showWarning = false;
     } 
-    // Normal (Safe)
+    // Status: NORMAL (Safe) - EAR normal, mata terbuka dengan baik
     else {
       this.drowsinessLevel = 'NORMAL';
       this.statusClass = 'success';
@@ -719,7 +1241,7 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.showWarning = false;
     }
 
-    this.statusDescription = `EAR: ${ear.toFixed(3)} | Status: ${
+    this.statusDescription = `EAR: ${earForStatus.toFixed(3)} | Status: ${
       this.statusMessage
     }`;
   }
@@ -748,15 +1270,41 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     try {
       const audioContext = new (window.AudioContext ||
         (window as any).webkitAudioContext)();
+      
+      // Buat suara peringatan yang sangat keras dan berulang-ulang
+      const beepCount = 5; // 5 beep untuk lebih berulang dan menarik perhatian
+      const beepDuration = 0.15; // Durasi setiap beep
+      const beepInterval = 0.05; // Interval sangat pendek untuk lebih cepat berulang
+      
+      for (let i = 0; i < beepCount; i++) {
+        const startTime = audioContext.currentTime + (i * (beepDuration + beepInterval));
+        
+        // Oscillator untuk beep yang sangat keras
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-      gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+        
+        // Gunakan square wave untuk suara yang lebih keras dan tajam
+        oscillator.type = 'square';
+        
+        // Frekuensi tinggi (1500Hz) untuk suara yang sangat tajam dan keras
+        oscillator.frequency.setValueAtTime(1500, startTime);
+        
+        // Envelope yang tajam (attack sangat cepat, sustain, release cepat)
+        const attackTime = 0.001;
+        const sustainTime = beepDuration - 0.002;
+        
+        // Volume maksimal (1.0) untuk suara yang sangat keras sekali
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(1.0, startTime + attackTime);
+        gainNode.gain.setValueAtTime(1.0, startTime + attackTime + sustainTime);
+        gainNode.gain.linearRampToValueAtTime(0, startTime + beepDuration);
+        
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.5);
+        
+        oscillator.start(startTime);
+        oscillator.stop(startTime + beepDuration);
+      }
     } catch (e) {
       console.warn('Tidak dapat memutar suara peringatan:', e);
     }

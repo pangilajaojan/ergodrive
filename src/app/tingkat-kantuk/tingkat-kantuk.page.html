@@ -20,7 +20,8 @@
       </div>
     </app-shared-header>
 
-    <div class="webcam-section ion-padding">
+    <!-- Webcam section hanya muncul jika simulasi tidak aktif -->
+    <div class="webcam-section ion-padding" *ngIf="!isSimulationActive">
       <h2 class="section-title">Real-Time Drowsiness Detection</h2>
       <div class="video-container" [class.camera-active]="isCameraOn">
         <video #video autoplay muted playsinline></video>
@@ -215,20 +216,68 @@
       </ion-list>
     </div>
 
-    <div class="simulation-overlay" *ngIf="isSimulationActive">
-      <div class="simulation-overlay-header">
-        <h2>Simulasi Mengemudi (Three.js)</h2>
-        <ion-button color="light" fill="solid" size="small" (click)="closeSimulation()">
-          <ion-icon slot="start" name="close"></ion-icon>
+    <!-- Simulation Fullscreen - Layar utama untuk game -->
+    <div class="simulation-fullscreen" *ngIf="isSimulationActive">
+      <div class="simulation-fullscreen-header">
+        <div class="fullscreen-title">
+          <ion-icon name="car-sport-outline"></ion-icon>
+          <span>Simulasi Mengemudi (Three.js)</span>
+        </div>
+        <ion-button fill="clear" size="small" color="danger" (click)="closeSimulation()" class="control-btn">
+          <ion-icon name="close"></ion-icon>
           Tutup Simulasi
         </ion-button>
       </div>
-      <div class="simulation-overlay-frame">
+      <div class="simulation-fullscreen-content">
         <iframe
+          #simulationIframe
           src="http://127.0.0.1:5500/src/app/threejs-city-game/index.html"
           title="Three.js City Driving"
+          (load)="onSimulationIframeLoad()"
         ></iframe>
       </div>
+    </div>
+
+    <!-- Webcam Window - Dapat di-resize dan di-maximize (in-window) -->
+    <div class="webcam-window" *ngIf="isWebcamWindowOpen && isSimulationActive" [class.maximized]="isWebcamWindowMaximized">
+      <div class="webcam-window-header" #webcamWindowHeader>
+        <div class="window-title">
+          <ion-icon name="videocam-outline"></ion-icon>
+          <span>Deteksi Wajah & Analisis Kantuk</span>
+        </div>
+        <div class="window-controls">
+          <ion-button fill="clear" size="small" (click)="toggleWebcamWindowMaximize()" class="control-btn">
+            <ion-icon [name]="isWebcamWindowMaximized ? 'contract' : 'expand'"></ion-icon>
+          </ion-button>
+          <ion-button fill="clear" size="small" color="danger" (click)="closeWebcamWindow()" class="control-btn">
+            <ion-icon name="close"></ion-icon>
+          </ion-button>
+        </div>
+      </div>
+      <div class="webcam-window-content">
+        <div class="video-container" [class.camera-active]="isCameraOn">
+          <video #video autoplay muted playsinline></video>
+          <canvas #canvas></canvas>
+        </div>
+        <div class="detection-status">
+          <p>Status: <span [ngClass]="statusClass">{{ statusDescription }}</span></p>
+        </div>
+        <div class="controls">
+          <ion-chip *ngIf="isTesting" color="danger">
+            <ion-icon name="time"></ion-icon>
+            <ion-label>Sedang Berlangsung: {{ formatTime(testDuration) }}</ion-label>
+          </ion-chip>
+        </div>
+      </div>
+      <!-- Resize handles -->
+      <div class="resize-handle resize-handle-top"></div>
+      <div class="resize-handle resize-handle-right"></div>
+      <div class="resize-handle resize-handle-bottom"></div>
+      <div class="resize-handle resize-handle-left"></div>
+      <div class="resize-handle resize-handle-top-left"></div>
+      <div class="resize-handle resize-handle-top-right"></div>
+      <div class="resize-handle resize-handle-bottom-left"></div>
+      <div class="resize-handle resize-handle-bottom-right"></div>
     </div>
   </div>
 </ion-content>

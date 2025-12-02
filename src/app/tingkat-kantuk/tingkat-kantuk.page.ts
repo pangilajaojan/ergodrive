@@ -1311,13 +1311,13 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.statusColor = statusColor;
       
       if (newStatus === 'MULAI MENGANTUK') {
-        this.triggerWarning();
-        if (!previousStatus.includes('MULAI MENGANTUK')) {
-          this.drowsyCount++;
-        }
-      } else {
-        this.showWarning = false;
+      this.triggerWarning();
+      if (!previousStatus.includes('MULAI MENGANTUK')) {
+        this.drowsyCount++;
       }
+      } else {
+      this.showWarning = false;
+    } 
     }
 
     // Status description dengan informasi lebih detail

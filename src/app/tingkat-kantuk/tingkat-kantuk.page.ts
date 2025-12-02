@@ -146,17 +146,26 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   private mediaStreamTracks: MediaStreamTrack[] = [];
   private readonly MAX_HISTORY = 30;
   private readonly WARNING_INTERVAL = 5000;
+  
+  // Variabel untuk analisis yang lebih tajam
+  private earHistoryForTrend: number[] = [];  // History untuk analisis trend
+  private statusHistory: string[] = [];  // History status untuk konsistensi
+  private marHistory: number[] = [];  // History MAR untuk deteksi menguap
 
   // Settings
   settings = {
     testDuration: 300,
-    // Threshold yang lebih akurat untuk deteksi kantuk
-    earWarningThreshold: 0.23,  // Threshold untuk "Sadar dan Fokus" (sedikit waspada)
-    earDangerThreshold: 0.18,   // Threshold untuk "Mulai Mengantuk" (mata mulai menutup)
+    // Threshold yang lebih akurat dan tajam untuk deteksi kantuk
+    earWarningThreshold: 0.25,  // Threshold untuk "Sadar dan Fokus" (sedikit waspada) - ditingkatkan untuk lebih sensitif
+    earDangerThreshold: 0.20,   // Threshold untuk "Mulai Mengantuk" (mata mulai menutup) - ditingkatkan untuk lebih sensitif
+    earNormalThreshold: 0.28,   // Threshold minimum untuk "Normal" - mata benar-benar terbuka dengan baik
     enableSound: true,
     enableVibration: true,
-    // Smoothing untuk menghindari fluktuasi cepat
-    smoothingWindow: 5,  // Jumlah frame untuk smoothing
+    // Smoothing untuk menghindari fluktuasi cepat - ditingkatkan untuk hasil lebih stabil
+    smoothingWindow: 8,  // Jumlah frame untuk smoothing (ditingkatkan dari 5 ke 8)
+    // Analisis trend dan variabilitas untuk akurasi lebih tinggi
+    trendWindow: 15,  // Jumlah frame untuk analisis trend
+    statusConsistencyFrames: 3,  // Jumlah frame konsisten sebelum status berubah
   };
 
   constructor(
@@ -357,6 +366,9 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.drowsyCount = 0;
       this.earValues = [];
       this.earHistoryForSmoothing = [];
+      this.earHistoryForTrend = [];
+      this.statusHistory = [];
+      this.marHistory = [];
       this.smoothedEAR = 0;
       this.statusMessage = 'MULAI';
       this.statusClass = 'normal';
@@ -797,6 +809,9 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.drowsyCount = 0;
       this.earValues = [];
       this.earHistoryForSmoothing = [];
+      this.earHistoryForTrend = [];
+      this.statusHistory = [];
+      this.marHistory = [];
       this.smoothedEAR = 0;
       this.statusMessage = 'MULAI';
       this.statusClass = 'normal';
@@ -852,6 +867,9 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.earValues = [];
       this.earHistory = [];
       this.earHistoryForSmoothing = [];
+      this.earHistoryForTrend = [];
+      this.statusHistory = [];
+      this.marHistory = [];
       this.smoothedEAR = 0;
       this.statusMessage = 'Belum Memulai';
       this.statusClass = 'normal';
@@ -1200,50 +1218,140 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.earHistoryForSmoothing.shift();
     }
 
+    // Tambahkan EAR ke history untuk analisis trend
+    this.earHistoryForTrend.push(ear);
+    if (this.earHistoryForTrend.length > this.settings.trendWindow) {
+      this.earHistoryForTrend.shift();
+    }
+
     // Hitung smoothed EAR (rata-rata dari beberapa frame terakhir untuk akurasi lebih baik)
     const sum = this.earHistoryForSmoothing.reduce((a, b) => a + b, 0);
     this.smoothedEAR = this.earHistoryForSmoothing.length > 0 
       ? sum / this.earHistoryForSmoothing.length 
       : ear;
 
-    // Gunakan smoothed EAR untuk menentukan status (lebih akurat dan stabil)
-    const earForStatus = this.smoothedEAR;
-    const previousStatus = this.drowsinessLevel;
+    // Analisis trend EAR (apakah cenderung menurun, naik, atau stabil)
+    const trend = this.calculateEARTrend();
     
-    // Status: MULAI MENGANTUK (Danger) - EAR sangat rendah, mata hampir tertutup
-    if (earForStatus < this.settings.earDangerThreshold) {
-      this.drowsinessLevel = 'MULAI MENGANTUK';
-      this.statusClass = 'danger';
-      this.statusMessage = 'Mulai Mengantuk';
-      this.statusIcon = 'warning';
-      this.statusColor = 'danger';
-      this.triggerWarning();
-      if (!previousStatus.includes('MULAI MENGANTUK')) {
-        this.drowsyCount++;
-      }
-    } 
-    // Status: SADAR DAN FOKUS (Warning) - EAR menurun, perlu waspada
-    else if (earForStatus < this.settings.earWarningThreshold) {
-      this.drowsinessLevel = 'SADAR DAN FOKUS';
-      this.statusClass = 'warning';
-      this.statusMessage = 'Sadar dan Fokus';
-      this.statusIcon = 'alert-circle';
-      this.statusColor = 'warning';
-      this.showWarning = false;
-    } 
-    // Status: NORMAL (Safe) - EAR normal, mata terbuka dengan baik
-    else {
-      this.drowsinessLevel = 'NORMAL';
-      this.statusClass = 'success';
-      this.statusMessage = 'Normal';
-      this.statusIcon = 'checkmark-circle';
-      this.statusColor = 'success';
-      this.showWarning = false;
+    // Analisis variabilitas EAR (EAR yang sangat bervariasi bisa menunjukkan kelelahan)
+    const variability = this.calculateEARVariability();
+
+    // Gunakan smoothed EAR dengan penyesuaian berdasarkan trend dan variabilitas
+    let earForStatus = this.smoothedEAR;
+    
+    // Jika trend menurun, kurangi sedikit EAR untuk deteksi lebih sensitif
+    if (trend < -0.01) {
+      earForStatus = earForStatus * 0.98;  // Penyesuaian kecil untuk trend menurun
+    }
+    
+    // Jika variabilitas tinggi, bisa menunjukkan kelelahan
+    if (variability > 0.05) {
+      earForStatus = earForStatus * 0.99;  // Penyesuaian kecil untuk variabilitas tinggi
     }
 
-    this.statusDescription = `EAR: ${earForStatus.toFixed(3)} | Status: ${
-      this.statusMessage
-    }`;
+    const previousStatus = this.drowsinessLevel;
+    let newStatus = '';
+    let statusClass = '';
+    let statusMessage = '';
+    let statusIcon = '';
+    let statusColor = '';
+    
+    // Status: MULAI MENGANTUK (Danger) - EAR sangat rendah, mata hampir tertutup
+    // Atau trend menurun dengan cepat + EAR rendah
+    if (earForStatus < this.settings.earDangerThreshold || 
+        (earForStatus < this.settings.earWarningThreshold && trend < -0.02)) {
+      newStatus = 'MULAI MENGANTUK';
+      statusClass = 'danger';
+      statusMessage = 'Mulai Mengantuk';
+      statusIcon = 'warning';
+      statusColor = 'danger';
+    } 
+    // Status: SADAR DAN FOKUS (Warning) - EAR menurun, perlu waspada
+    // Atau trend menurun atau variabilitas tinggi
+    else if (earForStatus < this.settings.earWarningThreshold || 
+             trend < -0.005 || 
+             variability > 0.04) {
+      newStatus = 'SADAR DAN FOKUS';
+      statusClass = 'warning';
+      statusMessage = 'Sadar dan Fokus';
+      statusIcon = 'alert-circle';
+      statusColor = 'warning';
+    } 
+    // Status: NORMAL (Safe) - EAR normal, mata terbuka dengan baik
+    // HARUS di atas threshold normal dan trend stabil/naik
+    else if (earForStatus >= this.settings.earNormalThreshold && trend >= -0.003) {
+      newStatus = 'NORMAL';
+      statusClass = 'success';
+      statusMessage = 'Normal';
+      statusIcon = 'checkmark-circle';
+      statusColor = 'success';
+    }
+    // Status: SADAR DAN FOKUS (jika tidak memenuhi kriteria Normal)
+    else {
+      newStatus = 'SADAR DAN FOKUS';
+      statusClass = 'warning';
+      statusMessage = 'Sadar dan Fokus';
+      statusIcon = 'alert-circle';
+      statusColor = 'warning';
+    }
+
+    // Cek konsistensi status sebelum mengubah (menghindari fluktuasi cepat)
+    this.statusHistory.push(newStatus);
+    if (this.statusHistory.length > this.settings.statusConsistencyFrames) {
+      this.statusHistory.shift();
+    }
+
+    // Hanya ubah status jika konsisten untuk beberapa frame
+    const isStatusConsistent = this.statusHistory.every(s => s === newStatus);
+    if (isStatusConsistent || this.statusHistory.length < this.settings.statusConsistencyFrames) {
+      this.drowsinessLevel = newStatus;
+      this.statusClass = statusClass;
+      this.statusMessage = statusMessage;
+      this.statusIcon = statusIcon;
+      this.statusColor = statusColor;
+      
+      if (newStatus === 'MULAI MENGANTUK') {
+        this.triggerWarning();
+        if (!previousStatus.includes('MULAI MENGANTUK')) {
+          this.drowsyCount++;
+        }
+      } else {
+        this.showWarning = false;
+      }
+    }
+
+    // Status description dengan informasi lebih detail
+    const trendText = trend < -0.01 ? '↓' : trend > 0.01 ? '↑' : '→';
+    const variabilityText = variability > 0.05 ? ' (Tinggi)' : variability > 0.03 ? ' (Sedang)' : ' (Rendah)';
+    this.statusDescription = `EAR: ${earForStatus.toFixed(3)} ${trendText} | Variabilitas: ${(variability * 100).toFixed(1)}%${variabilityText} | Status: ${this.statusMessage}`;
+  }
+
+  // Fungsi untuk menghitung trend EAR (apakah cenderung menurun, naik, atau stabil)
+  private calculateEARTrend(): number {
+    if (this.earHistoryForTrend.length < 5) return 0;
+    
+    // Hitung rata-rata 5 frame terakhir vs 5 frame sebelumnya
+    const recentFrames = this.earHistoryForTrend.slice(-5);
+    const previousFrames = this.earHistoryForTrend.slice(-10, -5);
+    
+    if (previousFrames.length === 0) return 0;
+    
+    const recentAvg = recentFrames.reduce((a, b) => a + b, 0) / recentFrames.length;
+    const previousAvg = previousFrames.reduce((a, b) => a + b, 0) / previousFrames.length;
+    
+    return recentAvg - previousAvg;  // Positif = naik, negatif = turun
+  }
+
+  // Fungsi untuk menghitung variabilitas EAR (standar deviasi)
+  private calculateEARVariability(): number {
+    if (this.earHistoryForTrend.length < 3) return 0;
+    
+    const recentFrames = this.earHistoryForTrend.slice(-10);  // Ambil 10 frame terakhir
+    if (recentFrames.length < 3) return 0;
+    
+    const mean = recentFrames.reduce((a, b) => a + b, 0) / recentFrames.length;
+    const variance = recentFrames.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentFrames.length;
+    return Math.sqrt(variance);  // Standar deviasi
   }
 
   private triggerWarning() {

@@ -1271,39 +1271,83 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       const audioContext = new (window.AudioContext ||
         (window as any).webkitAudioContext)();
       
-      // Buat suara peringatan yang sangat keras dan berulang-ulang
-      const beepCount = 5; // 5 beep untuk lebih berulang dan menarik perhatian
-      const beepDuration = 0.15; // Durasi setiap beep
-      const beepInterval = 0.05; // Interval sangat pendek untuk lebih cepat berulang
+      // Buat suara peringatan yang sangat keras, tajam, dan berulang-ulang
+      const beepCount = 6; // 6 beep untuk lebih berulang dan menarik perhatian
+      const beepDuration = 0.2; // Durasi setiap beep sedikit lebih panjang untuk lebih jelas
+      const beepInterval = 0.04; // Interval sangat pendek untuk lebih cepat berulang
       
       for (let i = 0; i < beepCount; i++) {
         const startTime = audioContext.currentTime + (i * (beepDuration + beepInterval));
         
-        // Oscillator untuk beep yang sangat keras
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
+        // Buat multiple oscillators dengan frekuensi berbeda untuk harmoni yang lebih kaya dan tajam
+        // Oscillator utama - frekuensi tinggi untuk suara yang sangat tajam
+        const oscillator1 = audioContext.createOscillator();
+        const gainNode1 = audioContext.createGain();
+        oscillator1.type = 'square'; // Square wave untuk suara yang keras dan tajam
+        oscillator1.frequency.setValueAtTime(2500, startTime); // Frekuensi lebih tinggi (2500Hz) untuk lebih tajam
+        // Tambahkan frequency sweep untuk efek yang lebih dramatis
+        oscillator1.frequency.exponentialRampToValueAtTime(3000, startTime + beepDuration * 0.3);
+        oscillator1.frequency.exponentialRampToValueAtTime(2500, startTime + beepDuration);
         
-        // Gunakan square wave untuk suara yang lebih keras dan tajam
-        oscillator.type = 'square';
+        // Oscillator kedua - harmoni untuk suara yang lebih kaya
+        const oscillator2 = audioContext.createOscillator();
+        const gainNode2 = audioContext.createGain();
+        oscillator2.type = 'sawtooth'; // Sawtooth untuk suara yang lebih kompleks
+        oscillator2.frequency.setValueAtTime(2000, startTime); // Frekuensi sedikit lebih rendah sebagai harmoni
         
-        // Frekuensi tinggi (1500Hz) untuk suara yang sangat tajam dan keras
-        oscillator.frequency.setValueAtTime(1500, startTime);
+        // Oscillator ketiga - frekuensi rendah untuk "punch" yang lebih kuat
+        const oscillator3 = audioContext.createOscillator();
+        const gainNode3 = audioContext.createGain();
+        oscillator3.type = 'square';
+        oscillator3.frequency.setValueAtTime(800, startTime); // Frekuensi rendah untuk body suara
         
-        // Envelope yang tajam (attack sangat cepat, sustain, release cepat)
-        const attackTime = 0.001;
-        const sustainTime = beepDuration - 0.002;
+        // Envelope yang sangat tajam dengan attack yang sangat cepat untuk "punch"
+        const attackTime = 0.0005; // Attack sangat cepat untuk suara yang lebih "punchy"
+        const sustainTime = beepDuration - 0.001;
+        const releaseTime = 0.001; // Release cepat untuk suara yang tajam
         
-        // Volume maksimal (1.0) untuk suara yang sangat keras sekali
-        gainNode.gain.setValueAtTime(0, startTime);
-        gainNode.gain.linearRampToValueAtTime(1.0, startTime + attackTime);
-        gainNode.gain.setValueAtTime(1.0, startTime + attackTime + sustainTime);
-        gainNode.gain.linearRampToValueAtTime(0, startTime + beepDuration);
+        // Volume untuk setiap oscillator (disesuaikan untuk balance)
+        const volume1 = 0.8; // Oscillator utama - volume tinggi
+        const volume2 = 0.4; // Oscillator harmoni - volume sedang
+        const volume3 = 0.3; // Oscillator low - volume rendah untuk body
         
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
+        // Envelope untuk oscillator 1 (utama)
+        gainNode1.gain.setValueAtTime(0, startTime);
+        gainNode1.gain.linearRampToValueAtTime(volume1, startTime + attackTime);
+        gainNode1.gain.setValueAtTime(volume1, startTime + attackTime + sustainTime);
+        gainNode1.gain.linearRampToValueAtTime(0, startTime + beepDuration);
         
-        oscillator.start(startTime);
-        oscillator.stop(startTime + beepDuration);
+        // Envelope untuk oscillator 2 (harmoni)
+        gainNode2.gain.setValueAtTime(0, startTime);
+        gainNode2.gain.linearRampToValueAtTime(volume2, startTime + attackTime);
+        gainNode2.gain.setValueAtTime(volume2, startTime + attackTime + sustainTime);
+        gainNode2.gain.linearRampToValueAtTime(0, startTime + beepDuration);
+        
+        // Envelope untuk oscillator 3 (low)
+        gainNode3.gain.setValueAtTime(0, startTime);
+        gainNode3.gain.linearRampToValueAtTime(volume3, startTime + attackTime);
+        gainNode3.gain.setValueAtTime(volume3, startTime + attackTime + sustainTime);
+        gainNode3.gain.linearRampToValueAtTime(0, startTime + beepDuration);
+        
+        // Connect semua oscillator ke destination
+        oscillator1.connect(gainNode1);
+        gainNode1.connect(audioContext.destination);
+        
+        oscillator2.connect(gainNode2);
+        gainNode2.connect(audioContext.destination);
+        
+        oscillator3.connect(gainNode3);
+        gainNode3.connect(audioContext.destination);
+        
+        // Start dan stop semua oscillator
+        oscillator1.start(startTime);
+        oscillator1.stop(startTime + beepDuration);
+        
+        oscillator2.start(startTime);
+        oscillator2.stop(startTime + beepDuration);
+        
+        oscillator3.start(startTime);
+        oscillator3.stop(startTime + beepDuration);
       }
     } catch (e) {
       console.warn('Tidak dapat memutar suara peringatan:', e);

@@ -144,22 +144,103 @@ function createRoad(length, width, x, z, rotationY = 0, color = 0x161616) {
   road.rotation.y = rotationY;
   road.receiveShadow = true;
   scene.add(road);
+  
+  // Tambahkan marka jalan untuk roads yang cukup lebar (minimal 6 unit)
+  if (width >= 6) {
+    createLaneMarkings(length, width, x, z, rotationY);
+  }
+  
   return road;
 }
 
+// Fungsi untuk membuat marka jalan (garis putih)
+// length: panjang jalan
+// width: lebar jalan
+// x, z: posisi jalan
+// rotationY: rotasi jalan (0 = horizontal, Math.PI/2 = vertical)
 function createLaneMarkings(length, width, x, z, rotationY = 0) {
-  const stripeGeometry = new THREE.PlaneGeometry(width, length);
-  const stripeMaterial = new THREE.MeshBasicMaterial({
-    color: 0xfdf9c4,
-    side: THREE.DoubleSide,
+  const markingHeight = 0.04; // Tinggi marka jalan (sedikit di atas jalan)
+  const centerLineWidth = 0.3; // Lebar garis tengah
+  const edgeLineWidth = 0.15; // Lebar garis pinggir
+  const markingColor = 0xffffff; // Warna putih untuk marka jalan
+  
+  // Material untuk marka jalan
+  const markingMaterial = new THREE.MeshStandardMaterial({
+    color: markingColor,
+    roughness: 0.3,
+    metalness: 0.1,
+    emissive: 0x333333, // Sedikit glow untuk terlihat lebih jelas
   });
-  const stripes = new THREE.Mesh(stripeGeometry, stripeMaterial);
-  stripes.rotation.x = -Math.PI / 2;
-  stripes.rotation.y = rotationY;
-  stripes.position.set(x, 0.04, z);
-  stripes.material.transparent = true;
-  stripes.material.opacity = 0.55;
-  scene.add(stripes);
+  
+  // Tentukan apakah jalan horizontal atau vertical
+  const isHorizontal = Math.abs(rotationY) < 0.1 || Math.abs(rotationY - Math.PI) < 0.1;
+  
+  if (isHorizontal) {
+    // Jalan horizontal - marka di tengah (garis putus-putus)
+    const dashLength = 4; // Panjang setiap dash
+    const dashGap = 3; // Jarak antar dash
+    const numDashes = Math.floor(length / (dashLength + dashGap));
+    const startOffset = -(length / 2) + dashLength / 2;
+    
+    for (let i = 0; i < numDashes; i++) {
+      const dashZ = startOffset + i * (dashLength + dashGap);
+      const dashGeometry = new THREE.PlaneGeometry(centerLineWidth, dashLength);
+      const dash = new THREE.Mesh(dashGeometry, markingMaterial);
+      dash.rotation.x = -Math.PI / 2;
+      dash.position.set(x, markingHeight, z + dashZ);
+      scene.add(dash);
+    }
+    
+    // Marka pinggir kiri dan kanan (garis solid tipis)
+    const leftEdge = new THREE.Mesh(
+      new THREE.PlaneGeometry(edgeLineWidth, length),
+      markingMaterial
+    );
+    leftEdge.rotation.x = -Math.PI / 2;
+    leftEdge.position.set(x - width / 2 + edgeLineWidth / 2, markingHeight, z);
+    scene.add(leftEdge);
+    
+    const rightEdge = new THREE.Mesh(
+      new THREE.PlaneGeometry(edgeLineWidth, length),
+      markingMaterial
+    );
+    rightEdge.rotation.x = -Math.PI / 2;
+    rightEdge.position.set(x + width / 2 - edgeLineWidth / 2, markingHeight, z);
+    scene.add(rightEdge);
+  } else {
+    // Jalan vertical - marka di tengah (garis putus-putus)
+    const dashLength = 4; // Panjang setiap dash
+    const dashGap = 3; // Jarak antar dash
+    const numDashes = Math.floor(length / (dashLength + dashGap));
+    const startOffset = -(length / 2) + dashLength / 2;
+    
+    for (let i = 0; i < numDashes; i++) {
+      const dashX = startOffset + i * (dashLength + dashGap);
+      const dashGeometry = new THREE.PlaneGeometry(dashLength, centerLineWidth);
+      const dash = new THREE.Mesh(dashGeometry, markingMaterial);
+      dash.rotation.x = -Math.PI / 2;
+      dash.rotation.z = Math.PI / 2;
+      dash.position.set(x + dashX, markingHeight, z);
+      scene.add(dash);
+    }
+    
+    // Marka pinggir atas dan bawah (garis solid tipis)
+    const topEdge = new THREE.Mesh(
+      new THREE.PlaneGeometry(length, edgeLineWidth),
+      markingMaterial
+    );
+    topEdge.rotation.x = -Math.PI / 2;
+    topEdge.position.set(x, markingHeight, z - width / 2 + edgeLineWidth / 2);
+    scene.add(topEdge);
+    
+    const bottomEdge = new THREE.Mesh(
+      new THREE.PlaneGeometry(length, edgeLineWidth),
+      markingMaterial
+    );
+    bottomEdge.rotation.x = -Math.PI / 2;
+    bottomEdge.position.set(x, markingHeight, z + width / 2 - edgeLineWidth / 2);
+    scene.add(bottomEdge);
+  }
 }
 
 // Fungsi untuk membuat road network berdasarkan grid (dari Three.js-City)
@@ -232,6 +313,7 @@ function buildRoadNetwork() {
           createRoad(roadLength, roadWidth, roadX, roadZ);
         }
       }
+
     }
   } else {
     // Fallback ke sistem road network yang lama jika grid belum dibuat
@@ -1239,3 +1321,4 @@ function animate() {
 
 // Mulai animasi loop
 animate();
+

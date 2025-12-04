@@ -1419,13 +1419,17 @@ function createModernBuilding(width, depth, x, z) {
   const windowDepth = Math.floor(depth / 3.5);
   const windowSpacing = height / (Math.floor(height / 4) + 1);
   
-  // Variasi warna jendela (kuning/orange untuk lampu menyala)
+  // Variasi warna jendela yang lebih terang dan cerah (kempling)
   const windowColors = [
-    0xffd700, // Emas (lampu menyala)
-    0xffa500, // Orange (lampu menyala)
-    0xffeb3b, // Kuning (lampu menyala)
-    0x1a1a2e, // Biru gelap (lampu mati)
-    0x0a0e27, // Hitam (lampu mati)
+    0xffff00, // Kuning sangat terang
+    0xffd700, // Emas terang
+    0xffeb3b, // Kuning lemon terang
+    0xffa500, // Orange terang
+    0x00ffff, // Cyan terang
+    0x87ceeb, // Sky blue terang
+    0xff69b4, // Pink terang
+    0x1a1a2e, // Biru gelap (mati)
+    0x0a0e27, // Hitam (mati)
   ];
   
   for (let i = 0; i < windowCount; i++) {
@@ -1437,18 +1441,20 @@ function createModernBuilding(width, depth, x, z) {
         const windowHeight = windowSpacing * 0.6;
         const windowWidth = (width / windowCount) * 0.7;
         
-        // Pilih warna jendela (70% menyala, 30% mati)
-        const isLit = randFloat() > 0.3;
+        // Pilih warna jendela (80% menyala dengan warna terang, 20% mati)
+        const isLit = randFloat() > 0.2;
         const windowColor = isLit 
-          ? windowColors[randInt(0, 2)] 
-          : windowColors[randInt(3, 4)];
+          ? windowColors[randInt(0, 6)] 
+          : windowColors[randInt(7, 8)];
         
         const windowMaterial = new THREE.MeshStandardMaterial({
           color: windowColor,
-          roughness: 0.1,
-          metalness: 0.9,
+          roughness: 0.05,
+          metalness: 0.95,
           emissive: isLit ? windowColor : 0x000000,
-          emissiveIntensity: isLit ? 0.8 : 0,
+          emissiveIntensity: isLit ? 1.2 : 0,
+          transparent: isLit,
+          opacity: isLit ? 0.9 : 0.3,
         });
         
         // Jendela di depan
@@ -1584,12 +1590,16 @@ function createSkyscraper(width, depth, x, z) {
   const windowCols = Math.floor(width / 2.5);
   const windowSpacing = height / windowRows;
   
-  // Variasi warna jendela untuk efek yang lebih menarik
+  // Variasi warna jendela yang lebih terang dan cerah (kempling)
   const windowColors = [
-    0xffd700, // Emas (sangat terang)
+    0xffff00, // Kuning sangat terang
+    0xffd700, // Emas terang
+    0xffeb3b, // Kuning lemon terang
     0xffa500, // Orange terang
-    0xffeb3b, // Kuning terang
     0x00ffff, // Cyan terang
+    0x87ceeb, // Sky blue terang
+    0xff69b4, // Pink terang
+    0x90ee90, // Light green terang
     0x1a1a3e, // Biru gelap (mati)
     0x0a0e27, // Hitam (mati)
   ];
@@ -1603,18 +1613,20 @@ function createSkyscraper(width, depth, x, z) {
       const windowHeight = windowSpacing * 0.7;
       const windowWidth = (width / windowCols) * 0.8;
       
-      // Pilih warna jendela (75% menyala dengan warna cerah, 25% mati)
-      const isLit = randFloat() > 0.25;
+      // Pilih warna jendela (85% menyala dengan warna terang, 15% mati)
+      const isLit = randFloat() > 0.15;
       const windowColor = isLit 
-        ? windowColors[randInt(0, 3)] 
-        : windowColors[randInt(4, 5)];
+        ? windowColors[randInt(0, 7)] 
+        : windowColors[randInt(8, 9)];
       
       const windowMaterial = new THREE.MeshStandardMaterial({
         color: windowColor,
         roughness: 0.05,
         metalness: 0.95,
         emissive: isLit ? windowColor : 0x000000,
-        emissiveIntensity: isLit ? 1.0 : 0,
+        emissiveIntensity: isLit ? 1.3 : 0,
+        transparent: isLit,
+        opacity: isLit ? 0.9 : 0.3,
       });
       
       // Jendela di depan
@@ -1744,15 +1756,21 @@ function createLowRiseBuilding(width, depth, x, z) {
       const windowHeight = windowSpacing * 0.6;
       const windowWidth = (width / windowCount) * 0.7;
       
-      const isLit = randFloat() > 0.4;
-      const windowColor = isLit ? 0xffd700 : 0x1a1a2e;
+      const isLit = randFloat() > 0.3;
+      // Warna jendela yang lebih terang dan cerah
+      const brightColors = [0xffff00, 0xffd700, 0xffeb3b, 0xffa500, 0x00ffff, 0x87ceeb];
+      const windowColor = isLit 
+        ? brightColors[randInt(0, brightColors.length - 1)]
+        : 0x1a1a2e;
       
       const windowMaterial = new THREE.MeshStandardMaterial({
         color: windowColor,
-        roughness: 0.1,
-        metalness: 0.9,
+        roughness: 0.05,
+        metalness: 0.95,
         emissive: isLit ? windowColor : 0x000000,
-        emissiveIntensity: isLit ? 0.6 : 0,
+        emissiveIntensity: isLit ? 1.1 : 0,
+        transparent: isLit,
+        opacity: isLit ? 0.9 : 0.3,
       });
       
       const window = new THREE.Mesh(
@@ -1835,15 +1853,21 @@ function createMidRiseBuilding(width, depth, x, z) {
       const windowHeight = windowSpacing * 0.6;
       const windowWidth = (width / windowCount) * 0.7;
       
-      const isLit = randFloat() > 0.3;
-      const windowColor = isLit ? 0xffa500 : 0x1a1a2e;
+      const isLit = randFloat() > 0.25;
+      // Warna jendela yang lebih terang dan cerah
+      const brightColors = [0xffff00, 0xffd700, 0xffeb3b, 0xffa500, 0x00ffff, 0x87ceeb, 0xff69b4];
+      const windowColor = isLit 
+        ? brightColors[randInt(0, brightColors.length - 1)]
+        : 0x1a1a2e;
       
       const windowMaterial = new THREE.MeshStandardMaterial({
         color: windowColor,
-        roughness: 0.1,
-        metalness: 0.9,
+        roughness: 0.05,
+        metalness: 0.95,
         emissive: isLit ? windowColor : 0x000000,
-        emissiveIntensity: isLit ? 0.7 : 0,
+        emissiveIntensity: isLit ? 1.2 : 0,
+        transparent: isLit,
+        opacity: isLit ? 0.9 : 0.3,
       });
       
       const window = new THREE.Mesh(
@@ -1909,15 +1933,21 @@ function createCommercialBuilding(width, depth, x, z) {
       const windowHeight = windowSpacing * 0.7;
       const windowWidth = (width / windowCount) * 0.8;
       
-      const isLit = randFloat() > 0.2; // Lebih banyak menyala untuk komersial
-      const windowColor = isLit ? 0xffeb3b : 0x0a0e27;
+      const isLit = randFloat() > 0.15; // Lebih banyak menyala untuk komersial
+      // Warna jendela yang lebih terang dan cerah untuk komersial
+      const brightColors = [0xffff00, 0xffd700, 0xffeb3b, 0xffa500, 0x00ffff, 0x87ceeb, 0xff69b4];
+      const windowColor = isLit 
+        ? brightColors[randInt(0, brightColors.length - 1)]
+        : 0x0a0e27;
       
       const windowMaterial = new THREE.MeshStandardMaterial({
         color: windowColor,
         roughness: 0.05,
         metalness: 0.95,
         emissive: isLit ? windowColor : 0x000000,
-        emissiveIntensity: isLit ? 0.9 : 0,
+        emissiveIntensity: isLit ? 1.4 : 0,
+        transparent: isLit,
+        opacity: isLit ? 0.9 : 0.3,
       });
       
       const window = new THREE.Mesh(
@@ -2197,6 +2227,47 @@ function scatterTrees() {
   console.log(`Scattered ${treesCreated} trees across the city`);
 }
 
+// Fungsi untuk mengecek apakah posisi terlalu dekat dengan taman
+function isTooCloseToPark(x, z, buildingHalfWidth = 12, buildingHalfDepth = 12) {
+  const parkBuffer = 35; // Buffer zone yang lebih besar agar tidak menghalangi pemandangan taman
+  
+  // Linear Park: posisi x=120, z=-40, ukuran 40 x 220
+  const linearParkX = 120;
+  const linearParkZ = -40;
+  const linearParkWidth = 40;
+  const linearParkDepth = 220;
+  
+  // Cek apakah gedung terlalu dekat dengan linear park
+  const linearParkMinX = linearParkX - linearParkWidth / 2 - parkBuffer - buildingHalfWidth;
+  const linearParkMaxX = linearParkX + linearParkWidth / 2 + parkBuffer + buildingHalfWidth;
+  const linearParkMinZ = linearParkZ - linearParkDepth / 2 - parkBuffer - buildingHalfDepth;
+  const linearParkMaxZ = linearParkZ + linearParkDepth / 2 + parkBuffer + buildingHalfDepth;
+  
+  if (x >= linearParkMinX && x <= linearParkMaxX && 
+      z >= linearParkMinZ && z <= linearParkMaxZ) {
+    return true; // Terlalu dekat dengan linear park
+  }
+  
+  // Water Garden: posisi sekitar x=-160, z=130, ukuran 140 x 32
+  const waterGardenX = -160;
+  const waterGardenZ = 130;
+  const waterGardenWidth = 140;
+  const waterGardenDepth = 32;
+  
+  // Cek apakah gedung terlalu dekat dengan water garden
+  const waterGardenMinX = waterGardenX - waterGardenWidth / 2 - parkBuffer - buildingHalfWidth;
+  const waterGardenMaxX = waterGardenX + waterGardenWidth / 2 + parkBuffer + buildingHalfWidth;
+  const waterGardenMinZ = waterGardenZ - waterGardenDepth / 2 - parkBuffer - buildingHalfDepth;
+  const waterGardenMaxZ = waterGardenZ + waterGardenDepth / 2 + parkBuffer + buildingHalfDepth;
+  
+  if (x >= waterGardenMinX && x <= waterGardenMaxX && 
+      z >= waterGardenMinZ && z <= waterGardenMaxZ) {
+    return true; // Terlalu dekat dengan water garden
+  }
+  
+  return false;
+}
+
 // Fungsi untuk populate city dengan gedung baru
 function populateNewCity() {
   const maxExtent = CITY.size / 2 - CITY.margin;
@@ -2210,7 +2281,12 @@ function populateNewCity() {
     for (let z = minExtent + 30; z <= maxExtent - 30; z += buildingSpacing) {
       // Skip area plaza dan area khusus
       if (Math.abs(x) < CITY.plazaRadius + 20 && Math.abs(z) < CITY.plazaRadius + 20) continue;
-      if (Math.abs(x - 120) < 20 && Math.abs(z + 40) < 110) continue; // Skip linear park
+      
+      // Cek apakah terlalu dekat dengan taman (sebelum menghitung ukuran gedung)
+      // Gunakan ukuran maksimum gedung untuk safety check
+      if (isTooCloseToPark(x, z, 12.5, 12.5)) {
+        continue; // Skip jika terlalu dekat dengan taman
+      }
       
       // Cek apakah terlalu dekat dengan jalan
       if (isTooCloseToRoad(x, z, roadSpacing, maxRoadWidth)) {
@@ -2222,6 +2298,11 @@ function populateNewCity() {
       const buildingDepth = randFloat(12, 25);
       const buildingHalfWidth = buildingWidth / 2;
       const buildingHalfDepth = buildingDepth / 2;
+      
+      // Cek ulang dengan ukuran gedung yang sebenarnya apakah terlalu dekat dengan taman
+      if (isTooCloseToPark(x, z, buildingHalfWidth, buildingHalfDepth)) {
+        continue; // Skip jika gedung dengan ukuran sebenarnya terlalu dekat dengan taman
+      }
       
       // Cek apakah gedung akan menyentuh jalan di semua sisi
       let tooClose = false;
@@ -2289,6 +2370,7 @@ function scatterDetails() {
   // karena populateCity akan membuat grid yang digunakan untuk roads
   createRoundabout();
   createLinearPark();
+  createWaterGarden(); // Buat water garden sebelum gedung
   placeStreetLights();
   createTransitHub();
   
@@ -2324,6 +2406,38 @@ function loadCarModel() {
         car.traverse((child) => {
           if (child.isMesh) {
             child.castShadow = true;
+            
+            // Deteksi dan ubah material jendela mobil
+            const name = child.name ? child.name.toLowerCase() : "";
+            if (
+              name.includes("window") ||
+              name.includes("glass") ||
+              name.includes("windshield") ||
+              name.includes("jendela") ||
+              name.includes("kaca")
+            ) {
+              // Buat material jendela yang lebih terang dan cerah (kempling)
+              // Warna-warna terang untuk jendela mobil
+              const brightWindowColors = [
+                0x87ceeb, // Sky blue terang
+                0x00bfff, // Deep sky blue
+                0x4a90e2, // Biru terang
+                0x5dade2, // Light blue
+                0x7fb3d3, // Sky blue
+              ];
+              const windowColor = brightWindowColors[Math.floor(Math.random() * brightWindowColors.length)];
+              
+              const windowMaterial = new THREE.MeshStandardMaterial({
+                color: windowColor,
+                roughness: 0.05,
+                metalness: 0.2,
+                transparent: true,
+                opacity: 0.5, // Lebih transparan untuk efek kaca yang lebih baik
+                emissive: windowColor,
+                emissiveIntensity: 0.5, // Lebih terang
+              });
+              child.material = windowMaterial;
+            }
           }
           // Coba deteksi mesh setir berdasarkan nama
           if (!steeringWheel && child.name) {
@@ -2426,7 +2540,8 @@ const cameraOffsets = {
   third: new THREE.Vector3(0, 5, -10),
   // First-person: sedikit mundur ke belakang agar setir & dashboard
   // lebih banyak kelihatan (tampilan kokpit lebih luas)
-  first: new THREE.Vector3(0, 1.55, -0.8),
+  // Y dinaikkan sedikit untuk posisi yang lebih tinggi
+  first: new THREE.Vector3(0, 1.7, -0.8),
   top: new THREE.Vector3(0, 80, 0.2),
 };
 

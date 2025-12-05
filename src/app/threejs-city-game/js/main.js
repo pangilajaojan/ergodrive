@@ -110,6 +110,8 @@ function createGroundLayers() {
   base.receiveShadow = true;
   scene.add(base);
 
+  // Greenbelt dibuat lebih rendah dari jalan (y = 0.005 vs y = 0.03)
+  // Ukuran sedikit lebih kecil untuk memastikan tidak menutupi jalan
   const greenbelt = new THREE.Mesh(
     new THREE.PlaneGeometry(CITY.size * 0.92, CITY.size * 0.92),
     new THREE.MeshStandardMaterial({
@@ -118,9 +120,12 @@ function createGroundLayers() {
     })
   );
   greenbelt.rotation.x = -Math.PI / 2;
-  greenbelt.position.y = 0.005;
+  greenbelt.position.y = 0.005; // Lebih rendah dari jalan (0.03) sehingga jalan menutupinya
   greenbelt.receiveShadow = true;
   scene.add(greenbelt);
+  
+  // Catatan: Greenbelt sengaja dibuat lebih rendah dari jalan
+  // sehingga jalan akan menutupinya dan tidak terlihat di atas jalan
 
   const plazaRing = new THREE.Mesh(
     new THREE.RingGeometry(CITY.plazaRadius - 4, CITY.plazaRadius + 6, 64),
@@ -141,10 +146,47 @@ function createRoad(length, width, x, z, rotationY = 0, color = 0x2a2a2a) {
     return null;
   }
   
+  // Validasi posisi tidak melebihi pagar (pagar ada di CITY.size / 2)
+  const fencePosition = CITY.size / 2;
+  const safetyMargin = 5; // Margin keamanan dari pagar
+  const maxExtent = fencePosition - safetyMargin;
+  const minExtent = -fencePosition + safetyMargin;
+  
+  // Cek apakah posisi jalan melebihi batas pagar
+  const roadIsHorizontal = Math.abs(rotationY) < 0.1 || Math.abs(rotationY - Math.PI) < 0.1;
+  if (roadIsHorizontal) {
+    // Jalan horizontal - cek apakah melebihi batas X
+    if (x + length / 2 > maxExtent || x - length / 2 < minExtent) {
+      return null; // Skip jika melebihi batas
+    }
+    if (z > maxExtent || z < minExtent) {
+      return null; // Skip jika posisi Z melebihi batas
+    }
+  } else {
+    // Jalan vertikal - cek apakah melebihi batas Z
+    if (z + length / 2 > maxExtent || z - length / 2 < minExtent) {
+      return null; // Skip jika melebihi batas
+    }
+    if (x > maxExtent || x < minExtent) {
+      return null; // Skip jika posisi X melebihi batas
+    }
+  }
+  
   // Overlap minimal untuk menghindari gap (2% dari width - lebih kecil untuk lebih rapi)
   const overlap = width * 0.02;
   const adjustedLength = length + overlap * 2;
   const adjustedWidth = width + overlap * 2;
+  
+  // Pastikan adjusted length dan width tidak melebihi batas
+  if (roadIsHorizontal) {
+    if (x + adjustedLength / 2 > maxExtent || x - adjustedLength / 2 < minExtent) {
+      return null;
+    }
+  } else {
+    if (z + adjustedLength / 2 > maxExtent || z - adjustedLength / 2 < minExtent) {
+      return null;
+    }
+  }
   
   // Buat key unik untuk tracking (dengan toleransi)
   const key = `${Math.round(x * 10) / 10},${Math.round(z * 10) / 10},${Math.round(rotationY * 100) / 100}`;
@@ -180,10 +222,8 @@ function createRoad(length, width, x, z, rotationY = 0, color = 0x2a2a2a) {
     metalness: 0.1,
   });
   
-  // Tentukan apakah jalan horizontal atau vertical
-  const isHorizontal = Math.abs(rotationY) < 0.1 || Math.abs(rotationY - Math.PI) < 0.1;
-  
-  if (isHorizontal) {
+  // Gunakan roadIsHorizontal yang sudah dideklarasikan di atas
+  if (roadIsHorizontal) {
     // Sidewalk kiri (utara)
     const sidewalkLeft = new THREE.Mesh(
       new THREE.PlaneGeometry(sidewalkWidth, adjustedLength),
@@ -773,36 +813,132 @@ function createTree(x, y, z, addToScene = true) {
   return treeGroup;
 }
 
+// Fungsi untuk membuat pagar pembatas di sekeliling map
+function createMapBoundary() {
+  const maxExtent = CITY.size / 2;
+  const minExtent = -CITY.size / 2;
+  
+  // Parameter pagar
+  const poleHeight = 3; // Tinggi tiang
+  const poleWidth = 0.25; // Lebar/diameter tiang
+  const barWidth = 0.15; // Lebar bar horizontal
+  const barThickness = 0.1; // Ketebalan bar
+  const poleSpacing = 10; // Jarak antar tiang
+  const numBars = 3; // Jumlah bar horizontal
+  
+  // Material pagar
+  const fenceMaterial = new THREE.MeshStandardMaterial({
+    color: 0x666666, // Abu-abu untuk pagar
+    metalness: 0.6,
+    roughness: 0.4,
+  });
+  
+  const poleMaterial = new THREE.MeshStandardMaterial({
+    color: 0x555555, // Lebih gelap untuk tiang
+    metalness: 0.7,
+    roughness: 0.3,
+  });
+  
+  // Fungsi helper untuk membuat pagar di satu sisi
+  const createFenceSide = (startX, startZ, endX, endZ, isHorizontal) => {
+    const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endZ - startZ, 2));
+    const numPoles = Math.floor(length / poleSpacing) + 1;
+    const actualSpacing = length / (numPoles - 1);
+    
+    for (let i = 0; i < numPoles; i++) {
+      const t = i / Math.max(1, numPoles - 1);
+      const poleX = startX + (endX - startX) * t;
+      const poleZ = startZ + (endZ - startZ) * t;
+      
+      // Tiang pagar
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(poleWidth / 2, poleWidth / 2, poleHeight, 8),
+        poleMaterial
+      );
+      pole.position.set(poleX, poleHeight / 2, poleZ);
+      pole.castShadow = true;
+      scene.add(pole);
+      
+      // Bar horizontal (3 bar) - hanya buat jika bukan tiang terakhir
+      if (i < numPoles - 1) {
+        for (let barIndex = 0; barIndex < numBars; barIndex++) {
+          const barY = 0.5 + (barIndex + 1) * (poleHeight / (numBars + 1));
+          const barLength = actualSpacing * 0.95; // Sedikit lebih pendek dari spacing
+          
+          let bar;
+          if (isHorizontal) {
+            // Bar untuk pagar horizontal (sejajar dengan sumbu X)
+            bar = new THREE.Mesh(
+              new THREE.BoxGeometry(barLength, barThickness, barWidth),
+              fenceMaterial
+            );
+            bar.position.set(poleX + actualSpacing / 2, barY, poleZ);
+          } else {
+            // Bar untuk pagar vertikal (sejajar dengan sumbu Z)
+            bar = new THREE.Mesh(
+              new THREE.BoxGeometry(barWidth, barThickness, barLength),
+              fenceMaterial
+            );
+            bar.position.set(poleX, barY, poleZ + actualSpacing / 2);
+          }
+          bar.castShadow = true;
+          scene.add(bar);
+        }
+      }
+    }
+  };
+  
+  // Buat pagar di 4 sisi map
+  // Sisi Utara (atas) - horizontal
+  createFenceSide(minExtent, maxExtent, maxExtent, maxExtent, true);
+  
+  // Sisi Selatan (bawah) - horizontal
+  createFenceSide(minExtent, minExtent, maxExtent, minExtent, true);
+  
+  // Sisi Barat (kiri) - vertikal
+  createFenceSide(minExtent, minExtent, minExtent, maxExtent, false);
+  
+  // Sisi Timur (kanan) - vertikal
+  createFenceSide(maxExtent, minExtent, maxExtent, maxExtent, false);
+}
+
 function createLinearPark() {
   const maxExtent = CITY.size / 2 - CITY.margin;
   const minExtent = -CITY.size / 2 + CITY.margin;
   
-  // Posisi linear park di dalam batas map
-  // Ukuran: 40 x 220, jadi perlu space 20 x 110 dari center
+  // Ukuran linear park
   const parkWidth = 40;
   const parkDepth = 220;
-  const parkX = Math.max(minExtent + parkWidth / 2, Math.min(maxExtent - parkWidth / 2, 120));
-  const parkZ = Math.max(minExtent + parkDepth / 2, Math.min(maxExtent - parkDepth / 2, -40));
   
-  const park = new THREE.Mesh(
-    new THREE.PlaneGeometry(parkWidth, parkDepth),
-    new THREE.MeshStandardMaterial({ color: 0x1b3a1a })
-  );
-  park.rotation.x = -Math.PI / 2;
-  park.position.set(parkX, 0.04, parkZ);
-  scene.add(park);
+  // Buat taman di timur (kanan) dan barat (kiri) - simetris
+  const parkPositions = [
+    { x: 120, z: -40 },  // Taman timur (kanan)
+    { x: -120, z: -40 }  // Taman barat (kiri) - simetris
+  ];
+  
+  parkPositions.forEach(({ x, z }) => {
+    const parkX = Math.max(minExtent + parkWidth / 2, Math.min(maxExtent - parkWidth / 2, x));
+    const parkZ = Math.max(minExtent + parkDepth / 2, Math.min(maxExtent - parkDepth / 2, z));
+    
+    const park = new THREE.Mesh(
+      new THREE.PlaneGeometry(parkWidth, parkDepth),
+      new THREE.MeshStandardMaterial({ color: 0x1b3a1a })
+    );
+    park.rotation.x = -Math.PI / 2;
+    park.position.set(parkX, 0.04, parkZ);
+    scene.add(park);
 
-  // Kurangi jumlah pohon di linear park (pohon akan dibuat terpencar di tempat lain)
-  // Hanya tambahkan beberapa pohon untuk dekorasi
-  for (let i = -90; i <= 90; i += 45) {
-    const treeX = parkX + randSpread(10);
-    const treeZ = parkZ + i;
-    // Cek batas sebelum membuat tree
-    if (treeX >= minExtent && treeX <= maxExtent && 
-        treeZ >= minExtent && treeZ <= maxExtent) {
-      createTree(treeX, 0, treeZ, true);
+    // Tambahkan pohon di taman
+    for (let i = -90; i <= 90; i += 45) {
+      const treeX = parkX + randSpread(10);
+      const treeZ = parkZ + i;
+      // Cek batas sebelum membuat tree
+      if (treeX >= minExtent && treeX <= maxExtent && 
+          treeZ >= minExtent && treeZ <= maxExtent) {
+        createTree(treeX, 0, treeZ, true);
+      }
     }
-  }
+  });
 }
 
 function createStreetLight(x, z, rotation = 0) {
@@ -840,8 +976,11 @@ function createStreetLight(x, z, rotation = 0) {
 }
 
 function placeStreetLights() {
-  const maxExtent = CITY.size / 2 - CITY.margin;
-  const minExtent = -CITY.size / 2 + CITY.margin;
+  // Gunakan batas pagar sebagai referensi - pagar ada di CITY.size / 2
+  const fencePosition = CITY.size / 2;
+  const safetyMargin = 5; // Margin keamanan dari pagar untuk lampu jalan
+  const maxExtent = fencePosition - safetyMargin;
+  const minExtent = -fencePosition + safetyMargin;
   
   // Place street lights di dalam batas map
   for (let i = minExtent; i <= maxExtent; i += 36) {
@@ -1276,6 +1415,470 @@ function populateCity() {
       buildings.push(building);
     }
   }
+}
+
+// Fungsi untuk membuat taman bermain (playground)
+function createPlayground() {
+  const fencePosition = CITY.size / 2;
+  const safetyMargin = 20; // Margin keamanan dari pagar
+  const maxExtent = fencePosition - safetyMargin;
+  const minExtent = -fencePosition + safetyMargin;
+  
+  // Ukuran taman bermain
+  const playgroundWidth = 50;
+  const playgroundDepth = 50;
+  
+  // Cari posisi yang tidak overlap dengan jalan
+  const roadSpacing = 80;
+  const maxRoadWidth = 18;
+  
+  // Posisi taman bermain (di area yang aman)
+  let playgroundX = 150;
+  let playgroundZ = 150;
+  
+  // Cek beberapa posisi kandidat
+  const candidatePositions = [
+    { x: 150, z: 150 },
+    { x: -150, z: 150 },
+    { x: 150, z: -150 },
+    { x: -150, z: -150 },
+    { x: 120, z: 120 },
+    { x: -120, z: 120 },
+  ];
+  
+  let foundPosition = false;
+  for (const pos of candidatePositions) {
+    if (!isOverlappingWithRoad(pos.x, pos.z, playgroundWidth, playgroundDepth, roadSpacing, maxRoadWidth) &&
+        pos.x >= minExtent + playgroundWidth / 2 && pos.x <= maxExtent - playgroundWidth / 2 &&
+        pos.z >= minExtent + playgroundDepth / 2 && pos.z <= maxExtent - playgroundDepth / 2) {
+      playgroundX = pos.x;
+      playgroundZ = pos.z;
+      foundPosition = true;
+      break;
+    }
+  }
+  
+  if (!foundPosition) return; // Skip jika tidak ada posisi yang aman
+  
+  // Ground area (area bermain dengan warna terang)
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(playgroundWidth, playgroundDepth),
+    new THREE.MeshStandardMaterial({
+      color: 0x4a9f4a, // Hijau terang untuk area bermain
+      roughness: 0.9,
+    })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(playgroundX, 0.02, playgroundZ);
+  ground.receiveShadow = true;
+  scene.add(ground);
+  
+  // Material untuk peralatan playground
+  const slideMaterial = new THREE.MeshStandardMaterial({
+    color: 0xff6b6b, // Merah untuk slide
+    roughness: 0.3,
+    metalness: 0.7,
+  });
+  
+  const swingMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4ecdc4, // Cyan untuk ayunan
+    roughness: 0.4,
+    metalness: 0.6,
+  });
+  
+  const structureMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffd93d, // Kuning untuk struktur
+    roughness: 0.5,
+    metalness: 0.5,
+  });
+  
+  // 1. SLIDE (Perosotan) - Lebih detail dan jelas
+  const slideGroup = new THREE.Group();
+  
+  // Tiang penyangga utama (lebih besar dan jelas)
+  const mainSupportPoles = [
+    { x: -1.5, z: -1.5 },
+    { x: 1.5, z: -1.5 },
+    { x: -1.5, z: 2.5 },
+    { x: 1.5, z: 2.5 },
+  ];
+  mainSupportPoles.forEach(({ x, z }) => {
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.15, 0.15, 4.5, 8),
+      structureMaterial
+    );
+    pole.position.set(x, 2.25, z);
+    slideGroup.add(pole);
+  });
+  
+  // Platform atas slide (lebih besar)
+  const slidePlatform = new THREE.Mesh(
+    new THREE.BoxGeometry(3.5, 0.3, 3.5),
+    structureMaterial
+  );
+  slidePlatform.position.set(0, 4.5, 0);
+  slideGroup.add(slidePlatform);
+  
+  // Rail/guard di platform
+  const platformRails = [
+    { x: -1.5, z: -1.5 },
+    { x: 1.5, z: -1.5 },
+    { x: -1.5, z: 1.5 },
+    { x: 1.5, z: 1.5 },
+  ];
+  platformRails.forEach(({ x, z }) => {
+    const rail = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.8, 6),
+      structureMaterial
+    );
+    rail.position.set(x, 4.8, z);
+    slideGroup.add(rail);
+  });
+  
+  // Tangga slide (lebih detail)
+  const steps = 5;
+  for (let i = 0; i < steps; i++) {
+    const step = new THREE.Mesh(
+      new THREE.BoxGeometry(2.5, 0.2, 0.5),
+      structureMaterial
+    );
+    step.position.set(-1.2, i * 0.6 + 0.5, -1.8 + i * 0.35);
+    slideGroup.add(step);
+    
+    // Handrail untuk tangga
+    if (i < steps - 1) {
+      const handrail = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.6, 6),
+        structureMaterial
+      );
+      handrail.position.set(-2, i * 0.6 + 0.8, -1.8 + i * 0.35);
+      slideGroup.add(handrail);
+    }
+  }
+  
+  // Slide ramp (perosotan) - lebih lebar dan jelas
+  const slideRamp = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.25, 6),
+    slideMaterial
+  );
+  slideRamp.rotation.x = -Math.PI / 5.5; // Miring sekitar 33 derajat
+  slideRamp.position.set(0, 2.2, 3);
+  slideGroup.add(slideRamp);
+  
+  // Side rails untuk slide
+  const slideRails = [
+    { x: -1.4, z: 3 },
+    { x: 1.4, z: 3 },
+  ];
+  slideRails.forEach(({ x, z }) => {
+    const rail = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.06, 6, 6),
+      structureMaterial
+    );
+    rail.rotation.x = -Math.PI / 5.5;
+    rail.position.set(x, 2.2, z);
+    slideGroup.add(rail);
+  });
+  
+  slideGroup.position.set(playgroundX - 15, 0, playgroundZ - 15);
+  slideGroup.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+  scene.add(slideGroup);
+  
+  // 2. SWING (Ayunan) - Lebih detail dengan 2 ayunan
+  const swingPositions = [
+    { x: playgroundX + 10, z: playgroundZ - 10 },
+    { x: playgroundX + 10, z: playgroundZ + 10 },
+  ];
+  
+  swingPositions.forEach(({ x, z }) => {
+    const swingGroup = new THREE.Group();
+    
+    // Tiang ayunan (A-frame structure)
+    const swingPoles = [
+      { x: -1.8, z: 0, angle: Math.PI / 12 }, // Miring ke dalam
+      { x: 1.8, z: 0, angle: -Math.PI / 12 },
+    ];
+    swingPoles.forEach(({ x: px, z: pz, angle }) => {
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.18, 4, 8),
+        structureMaterial
+      );
+      pole.rotation.z = angle;
+      pole.position.set(px, 2, pz);
+      swingGroup.add(pole);
+    });
+    
+    // Bar horizontal (untuk menggantung ayunan) - lebih tebal
+    const topBar = new THREE.Mesh(
+      new THREE.BoxGeometry(4, 0.25, 0.25),
+      structureMaterial
+    );
+    topBar.position.set(0, 4, 0);
+    swingGroup.add(topBar);
+    
+    // Kursi ayunan (lebih detail)
+    const swingSeat = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 0.2, 1),
+      swingMaterial
+    );
+    swingSeat.position.set(0, 2.2, 0);
+    swingGroup.add(swingSeat);
+    
+    // Backrest untuk kursi
+    const backrest = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 0.8, 0.15),
+      swingMaterial
+    );
+    backrest.rotation.x = Math.PI / 8;
+    backrest.position.set(0, 2.6, -0.4);
+    swingGroup.add(backrest);
+    
+    // Rantai/tali ayunan (4 rantai untuk lebih realistis)
+    const chains = [
+      { x: -0.6, z: -0.4 },
+      { x: 0.6, z: -0.4 },
+      { x: -0.6, z: 0.4 },
+      { x: 0.6, z: 0.4 },
+    ];
+    chains.forEach(({ x: cx, z: cz }) => {
+      const chain = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 1.8, 6),
+        new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.8 })
+      );
+      chain.position.set(cx, 3.1, cz);
+      swingGroup.add(chain);
+    });
+    
+    swingGroup.position.set(x, 0, z);
+    swingGroup.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    scene.add(swingGroup);
+  });
+  
+  // 3. CLIMBING STRUCTURE (Struktur panjat) - Lebih detail dan menarik
+  const climbingGroup = new THREE.Group();
+  
+  // Tiang utama (lebih besar)
+  const mainPole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.25, 0.25, 3.5, 8),
+    structureMaterial
+  );
+  mainPole.position.set(0, 1.75, 0);
+  climbingGroup.add(mainPole);
+  
+  // Platform panjat (lebih besar dengan rail)
+  const climbingPlatform = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.25, 3),
+    structureMaterial
+  );
+  climbingPlatform.position.set(0, 3.5, 0);
+  climbingGroup.add(climbingPlatform);
+  
+  // Rail di platform
+  const climbingPlatformRails = [
+    { x: -1.3, z: -1.3 },
+    { x: 1.3, z: -1.3 },
+    { x: -1.3, z: 1.3 },
+    { x: 1.3, z: 1.3 },
+  ];
+  climbingPlatformRails.forEach(({ x, z }) => {
+    const rail = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.6, 6),
+      structureMaterial
+    );
+    rail.position.set(x, 3.7, z);
+    climbingGroup.add(rail);
+  });
+  
+  // Tiang penyangga (lebih banyak)
+  const supportPoles = [
+    { x: -1.5, z: -1.5 },
+    { x: 1.5, z: -1.5 },
+    { x: -1.5, z: 1.5 },
+    { x: 1.5, z: 1.5 },
+    { x: 0, z: -1.5 },
+    { x: 0, z: 1.5 },
+    { x: -1.5, z: 0 },
+    { x: 1.5, z: 0 },
+  ];
+  supportPoles.forEach(({ x, z }) => {
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.12, 3.5, 6),
+      structureMaterial
+    );
+    pole.position.set(x, 1.75, z);
+    climbingGroup.add(pole);
+  });
+  
+  // Tangga panjat (lebih detail dengan side rails)
+  const ladderSteps = 6;
+  for (let i = 0; i < ladderSteps; i++) {
+    const rung = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 0.12, 0.12),
+      structureMaterial
+    );
+    rung.position.set(0, i * 0.55 + 0.5, -1.2);
+    rung.rotation.y = Math.PI / 4;
+    climbingGroup.add(rung);
+  }
+  
+  // Side rails untuk tangga
+  const ladderRails = [
+    { x: -0.8, z: -1.2 },
+    { x: 0.8, z: -1.2 },
+  ];
+  ladderRails.forEach(({ x, z }) => {
+    const rail = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, 3.3, 6),
+      structureMaterial
+    );
+    rail.rotation.y = Math.PI / 4;
+    rail.position.set(x, 1.65, z);
+    climbingGroup.add(rail);
+  });
+  
+  // Climbing holds (pegangan panjat) di tiang utama
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const hold = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.3 })
+    );
+    hold.position.set(
+      Math.cos(angle) * 0.3,
+      i * 0.4 + 0.8,
+      Math.sin(angle) * 0.3
+    );
+    climbingGroup.add(hold);
+  }
+  
+  climbingGroup.position.set(playgroundX + 15, 0, playgroundZ - 15);
+  climbingGroup.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+  scene.add(climbingGroup);
+  
+  // 4. SEESAW (Jungkat-jungkit) - Lebih detail dan realistis
+  const seesawGroup = new THREE.Group();
+  
+  // Base/pivot (lebih besar dan stabil)
+  const seesawBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4, 0.4, 0.6, 8),
+    structureMaterial
+  );
+  seesawBase.position.set(0, 0.3, 0);
+  seesawGroup.add(seesawBase);
+  
+  // Support untuk base
+  const baseSupports = [
+    { x: -0.3, z: 0 },
+    { x: 0.3, z: 0 },
+  ];
+  baseSupports.forEach(({ x, z }) => {
+    const support = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.3, 0.2),
+      structureMaterial
+    );
+    support.position.set(x, 0.15, z);
+    seesawGroup.add(support);
+  });
+  
+  // Papan jungkat-jungkit (lebih lebar dan detail)
+  const seesawBoard = new THREE.Mesh(
+    new THREE.BoxGeometry(7, 0.25, 1),
+    new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.7 }) // Coklat untuk papan
+  );
+  seesawBoard.position.set(0, 0.75, 0);
+  seesawBoard.rotation.z = Math.PI / 18; // Sedikit miring
+  seesawGroup.add(seesawBoard);
+  
+  // Pivot point di tengah papan
+  const pivotPoint = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.15, 0.3, 8),
+    structureMaterial
+  );
+  pivotPoint.position.set(0, 0.9, 0);
+  seesawGroup.add(pivotPoint);
+  
+  // Handle/grip di ujung (lebih besar dan jelas)
+  const handles = [
+    { x: -3.2, z: 0 },
+    { x: 3.2, z: 0 },
+  ];
+  handles.forEach(({ x, z }) => {
+    const handle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.08, 0.5, 8),
+      structureMaterial
+    );
+    handle.rotation.z = Math.PI / 2;
+    handle.position.set(x, 0.95, z);
+    seesawGroup.add(handle);
+    
+    // Support untuk handle
+    const handleSupport = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.3, 0.15),
+      structureMaterial
+    );
+    handleSupport.position.set(x, 0.8, z);
+    seesawGroup.add(handleSupport);
+  });
+  
+  // Footrest di ujung papan
+  const footrests = [
+    { x: -3, z: 0 },
+    { x: 3, z: 0 },
+  ];
+  footrests.forEach(({ x, z }) => {
+    const footrest = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 0.1, 0.3),
+      structureMaterial
+    );
+    footrest.position.set(x, 0.7, z);
+    seesawGroup.add(footrest);
+  });
+  
+  seesawGroup.position.set(playgroundX - 15, 0, playgroundZ + 15);
+  seesawGroup.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+  scene.add(seesawGroup);
+  
+  // 5. BENCH (Bangku)
+  const bench = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.4, 1),
+    new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.8 })
+  );
+  bench.position.set(playgroundX + 15, 0.2, playgroundZ + 15);
+  bench.castShadow = true;
+  scene.add(bench);
+  
+  // 6. Tambahkan beberapa pohon kecil di sekitar playground
+  const treePositions = [
+    { x: playgroundX - 20, z: playgroundZ - 20 },
+    { x: playgroundX + 20, z: playgroundZ - 20 },
+    { x: playgroundX - 20, z: playgroundZ + 20 },
+  ];
+  
+  treePositions.forEach(({ x, z }) => {
+    if (x >= minExtent && x <= maxExtent && z >= minExtent && z <= maxExtent) {
+      createTree(x, 0, z, true);
+    }
+  });
 }
 
 function createTransitHub() {
@@ -1972,9 +2575,13 @@ function createNewRoadNetwork() {
   // Clear road positions tracking
   roadPositions.clear();
   
-  const maxExtent = CITY.size / 2 - CITY.margin;
-  const minExtent = -CITY.size / 2 + CITY.margin;
-  const totalSize = CITY.size - CITY.margin * 2;
+  // Gunakan batas pagar sebagai referensi - pagar ada di CITY.size / 2
+  // Jadi semua elemen harus berada di dalam dengan margin yang cukup
+  const fencePosition = CITY.size / 2;
+  const safetyMargin = 10; // Margin keamanan dari pagar
+  const maxExtent = fencePosition - safetyMargin;
+  const minExtent = -fencePosition + safetyMargin;
+  const totalSize = (maxExtent - minExtent);
   
   // Grid system untuk jalan baru - lebih teratur, rapi, dan modern
   const roadSpacing = 80; // Jarak antar jalan utama (diperbesar dari 60 untuk mengurangi jumlah jalan)
@@ -2108,14 +2715,16 @@ function createNewRoadNetwork() {
 
 // Fungsi untuk mengecek apakah posisi terlalu dekat dengan jalan
 function isTooCloseToRoad(x, z, roadSpacing, maxRoadWidth) {
-  // Jarak minimum dari jalan (termasuk sidewalk)
+  // Jarak minimum dari jalan (termasuk sidewalk dan median)
   // Sidewalk width = 2, road width bisa sampai 18, jadi buffer = maxRoadWidth/2 + sidewalk + margin
-  const roadMargin = maxRoadWidth / 2 + 2 + 10; // 10 unit buffer untuk memastikan tidak menyentuh
+  // Buffer diperbesar lebih besar untuk memastikan pohon tidak di atas jalan
+  const roadMargin = maxRoadWidth / 2 + 2 + 20; // 20 unit buffer untuk memastikan tidak di atas jalan
   
   // Cek jalan horizontal (z = 0, ±roadSpacing, ±2*roadSpacing, dll)
   for (let i = -CITY.size / 2; i <= CITY.size / 2; i += roadSpacing) {
     if (Math.abs(i) < CITY.plazaRadius + 15) continue; // Skip area plaza
     const distanceToRoad = Math.abs(z - i);
+    // Cek apakah terlalu dekat dengan jalan horizontal
     if (distanceToRoad < roadMargin) {
       return true; // Terlalu dekat dengan jalan horizontal
     }
@@ -2125,8 +2734,30 @@ function isTooCloseToRoad(x, z, roadSpacing, maxRoadWidth) {
   for (let i = -CITY.size / 2; i <= CITY.size / 2; i += roadSpacing) {
     if (Math.abs(i) < CITY.plazaRadius + 15) continue; // Skip area plaza
     const distanceToRoad = Math.abs(x - i);
+    // Cek apakah terlalu dekat dengan jalan vertikal
     if (distanceToRoad < roadMargin) {
       return true; // Terlalu dekat dengan jalan vertikal
+    }
+  }
+  
+  // Cek tambahan: pastikan tidak di tengah jalan (median area) dengan buffer lebih besar
+  // Untuk jalan horizontal, cek apakah z terlalu dekat dengan posisi jalan
+  for (let i = -CITY.size / 2; i <= CITY.size / 2; i += roadSpacing) {
+    if (Math.abs(i) < CITY.plazaRadius + 15) continue;
+    // Cek apakah berada di area median (sangat dekat dengan garis tengah jalan)
+    // Buffer diperbesar untuk memastikan tidak di atas jalan
+    if (Math.abs(z - i) < maxRoadWidth / 2 + 10) {
+      return true; // Berada di area median atau di atas jalan
+    }
+  }
+  
+  // Untuk jalan vertikal, cek apakah x terlalu dekat dengan posisi jalan
+  for (let i = -CITY.size / 2; i <= CITY.size / 2; i += roadSpacing) {
+    if (Math.abs(i) < CITY.plazaRadius + 15) continue;
+    // Cek apakah berada di area median (sangat dekat dengan garis tengah jalan)
+    // Buffer diperbesar untuk memastikan tidak di atas jalan
+    if (Math.abs(x - i) < maxRoadWidth / 2 + 10) {
+      return true; // Berada di area median atau di atas jalan
     }
   }
   
@@ -2135,7 +2766,7 @@ function isTooCloseToRoad(x, z, roadSpacing, maxRoadWidth) {
 
 // Fungsi untuk mengecek apakah posisi berada di area intersection (area kuning)
 function isInIntersection(x, z, roadSpacing, maxRoadWidth) {
-  const intersectionRadius = maxRoadWidth / 2 + 5; // Radius area intersection (termasuk buffer)
+  const intersectionRadius = maxRoadWidth / 2 + 8; // Radius area intersection (termasuk buffer, diperbesar)
   
   // Cek semua intersection points (titik temu jalan horizontal dan vertikal)
   for (let h = -CITY.size / 2; h <= CITY.size / 2; h += roadSpacing) {
@@ -2159,8 +2790,11 @@ function isInIntersection(x, z, roadSpacing, maxRoadWidth) {
 
 // Fungsi untuk menempatkan pohon secara terpencar di seluruh kota
 function scatterTrees() {
-  const maxExtent = CITY.size / 2 - CITY.margin;
-  const minExtent = -CITY.size / 2 + CITY.margin;
+  // Gunakan batas pagar sebagai referensi - pagar ada di CITY.size / 2
+  const fencePosition = CITY.size / 2;
+  const safetyMargin = 10; // Margin keamanan dari pagar untuk pohon
+  const maxExtent = fencePosition - safetyMargin;
+  const minExtent = -fencePosition + safetyMargin;
   const roadSpacing = 80; // Harus sama dengan di createNewRoadNetwork
   const maxRoadWidth = 18; // Harus sama dengan di createNewRoadNetwork
   
@@ -2185,8 +2819,8 @@ function scatterTrees() {
     // Skip area plaza
     if (Math.abs(x) < CITY.plazaRadius + 20 && Math.abs(z) < CITY.plazaRadius + 20) continue;
     
-    // Skip area linear park (sudah ada pohon di sana)
-    if (Math.abs(x - 120) < 25 && Math.abs(z + 40) < 115) continue;
+    // Skip area linear park (sudah ada pohon di sana) - timur dan barat
+    if ((Math.abs(x - 120) < 25 || Math.abs(x + 120) < 25) && Math.abs(z + 40) < 115) continue;
     
     // Cek apakah berada di area intersection (area kuning) - KOSONGKAN
     if (isInIntersection(x, z, roadSpacing, maxRoadWidth)) {
@@ -2225,27 +2859,110 @@ function scatterTrees() {
   }
   
   console.log(`Scattered ${treesCreated} trees across the city`);
+  
+  // Hapus pohon yang berada di atas jalan setelah semua pohon dibuat
+  removeTreesOnRoads(roadSpacing, maxRoadWidth);
+}
+
+// Fungsi untuk menghapus pohon yang berada di atas jalan
+function removeTreesOnRoads(roadSpacing, maxRoadWidth) {
+  const roadMargin = maxRoadWidth / 2 + 2; // Margin untuk area jalan (termasuk sidewalk)
+  let removedCount = 0;
+  
+  // Iterasi semua objek di scene
+  const objectsToRemove = [];
+  scene.traverse((object) => {
+    // Cek apakah ini adalah tree group (memiliki trunk dan canopy)
+    if (object.isGroup && object.children.length > 0) {
+      const hasTrunk = object.children.some(child => 
+        child.isMesh && child.geometry && child.geometry.type === 'CylinderGeometry'
+      );
+      const hasCanopy = object.children.some(child => 
+        child.isMesh && child.geometry && child.geometry.type === 'ConeGeometry'
+      );
+      
+      if (hasTrunk && hasCanopy) {
+        // Ini adalah pohon, cek posisinya
+        const x = object.position.x;
+        const z = object.position.z;
+        
+        // Cek apakah berada di atas jalan horizontal
+        for (let i = -CITY.size / 2; i <= CITY.size / 2; i += roadSpacing) {
+          if (Math.abs(i) < CITY.plazaRadius + 15) continue;
+          if (Math.abs(z - i) < roadMargin) {
+            objectsToRemove.push(object);
+            break;
+          }
+        }
+        
+        // Cek apakah berada di atas jalan vertikal
+        if (!objectsToRemove.includes(object)) {
+          for (let i = -CITY.size / 2; i <= CITY.size / 2; i += roadSpacing) {
+            if (Math.abs(i) < CITY.plazaRadius + 15) continue;
+            if (Math.abs(x - i) < roadMargin) {
+              objectsToRemove.push(object);
+              break;
+            }
+          }
+        }
+        
+        // Cek apakah berada di intersection
+        if (!objectsToRemove.includes(object)) {
+          if (isInIntersection(x, z, roadSpacing, maxRoadWidth)) {
+            objectsToRemove.push(object);
+          }
+        }
+      }
+    }
+  });
+  
+  // Hapus pohon yang berada di atas jalan
+  objectsToRemove.forEach(tree => {
+    // Dispose geometry dan material
+    tree.traverse((child) => {
+      if (child.isMesh) {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => mat.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      }
+    });
+    scene.remove(tree);
+    removedCount++;
+  });
+  
+  if (removedCount > 0) {
+    console.log(`Removed ${removedCount} trees that were on roads`);
+  }
 }
 
 // Fungsi untuk mengecek apakah posisi terlalu dekat dengan taman
 function isTooCloseToPark(x, z, buildingHalfWidth = 12, buildingHalfDepth = 12) {
   const parkBuffer = 35; // Buffer zone yang lebih besar agar tidak menghalangi pemandangan taman
   
-  // Linear Park: posisi x=120, z=-40, ukuran 40 x 220
-  const linearParkX = 120;
-  const linearParkZ = -40;
+  // Linear Park: posisi x=120 (timur) dan x=-120 (barat), z=-40, ukuran 40 x 220
+  const linearParkPositions = [
+    { x: 120, z: -40 },   // Taman timur
+    { x: -120, z: -40 }   // Taman barat
+  ];
   const linearParkWidth = 40;
   const linearParkDepth = 220;
   
-  // Cek apakah gedung terlalu dekat dengan linear park
-  const linearParkMinX = linearParkX - linearParkWidth / 2 - parkBuffer - buildingHalfWidth;
-  const linearParkMaxX = linearParkX + linearParkWidth / 2 + parkBuffer + buildingHalfWidth;
-  const linearParkMinZ = linearParkZ - linearParkDepth / 2 - parkBuffer - buildingHalfDepth;
-  const linearParkMaxZ = linearParkZ + linearParkDepth / 2 + parkBuffer + buildingHalfDepth;
-  
-  if (x >= linearParkMinX && x <= linearParkMaxX && 
-      z >= linearParkMinZ && z <= linearParkMaxZ) {
-    return true; // Terlalu dekat dengan linear park
+  // Cek apakah gedung terlalu dekat dengan linear park (timur atau barat)
+  for (const park of linearParkPositions) {
+    const linearParkMinX = park.x - linearParkWidth / 2 - parkBuffer - buildingHalfWidth;
+    const linearParkMaxX = park.x + linearParkWidth / 2 + parkBuffer + buildingHalfWidth;
+    const linearParkMinZ = park.z - linearParkDepth / 2 - parkBuffer - buildingHalfDepth;
+    const linearParkMaxZ = park.z + linearParkDepth / 2 + parkBuffer + buildingHalfDepth;
+    
+    if (x >= linearParkMinX && x <= linearParkMaxX && 
+        z >= linearParkMinZ && z <= linearParkMaxZ) {
+      return true; // Terlalu dekat dengan linear park
+    }
   }
   
   // Water Garden: posisi sekitar x=-160, z=130, ukuran 140 x 32
@@ -2270,8 +2987,11 @@ function isTooCloseToPark(x, z, buildingHalfWidth = 12, buildingHalfDepth = 12) 
 
 // Fungsi untuk populate city dengan gedung baru
 function populateNewCity() {
-  const maxExtent = CITY.size / 2 - CITY.margin;
-  const minExtent = -CITY.size / 2 + CITY.margin;
+  // Gunakan batas pagar sebagai referensi - pagar ada di CITY.size / 2
+  const fencePosition = CITY.size / 2;
+  const safetyMargin = 15; // Margin keamanan dari pagar untuk gedung
+  const maxExtent = fencePosition - safetyMargin;
+  const minExtent = -fencePosition + safetyMargin;
   const buildingSpacing = 55; // Jarak antar gedung (diperbesar untuk memberi ruang lebih)
   const roadSpacing = 80; // Harus sama dengan di createNewRoadNetwork
   const maxRoadWidth = 18; // Lebar jalan maksimum untuk perhitungan jarak
@@ -2366,11 +3086,15 @@ function scatterDetails() {
   // Hapus semua gedung lama terlebih dahulu
   removeAllBuildings();
   
+  // Buat pagar pembatas di sekeliling map
+  createMapBoundary();
+  
   // Road network dibuat setelah ground tapi sebelum buildings
   // karena populateCity akan membuat grid yang digunakan untuk roads
   createRoundabout();
-  createLinearPark();
-  createWaterGarden(); // Buat water garden sebelum gedung
+  // createLinearPark(); // Dihapus sesuai permintaan
+  // createWaterGarden(); // Dihapus sesuai permintaan
+  createPlayground(); // Buat taman bermain
   placeStreetLights();
   createTransitHub();
   
@@ -2382,6 +3106,9 @@ function scatterDetails() {
   
   // Sebarkan pohon secara terpencar di seluruh kota (setelah gedung dibuat)
   scatterTrees();
+  
+  // Hapus pohon dan rumput yang berada di atas jalan
+  removeTreesOnRoads(80, 18); // roadSpacing = 80, maxRoadWidth = 18
 }
 
 scatterDetails();

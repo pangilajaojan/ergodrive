@@ -231,7 +231,7 @@
       <div class="simulation-fullscreen-content">
         <iframe
           #simulationIframe
-          src="http://127.0.0.1:5500/src/app/threejs-city-game/index.html"
+          [src]="simulationUrl"
           title="Three.js City Driving"
           (load)="onSimulationIframeLoad()"
         ></iframe>

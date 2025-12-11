@@ -7,6 +7,7 @@ import {
   AfterViewInit,
   CUSTOM_ELEMENTS_SCHEMA,
 } from '@angular/core';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import {
   trigger,
   state,
@@ -89,6 +90,7 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   isWebcamWindowOpen = false;
   isWebcamWindowMaximized = false;
   testStartTime: Date | null = null;
+  simulationUrl: SafeResourceUrl;
   
   // Event listener untuk keyboard saat simulasi aktif
   private keyboardEventListener: ((e: KeyboardEvent) => void) | null = null;
@@ -147,6 +149,12 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   private readonly MAX_HISTORY = 30;
   private readonly WARNING_INTERVAL = 5000;
   
+  // Tracking frekuensi warning untuk menentukan status
+  private warningHistory: number[] = []; // Timestamp setiap warning
+  private readonly WARNING_TRACKING_WINDOW = 30000; // 30 detik untuk tracking
+  private readonly FREQUENT_WARNING_THRESHOLD = 3; // 3+ warning dalam 30 detik = sering
+  private readonly RARE_WARNING_THRESHOLD = 1; // 0-1 warning dalam 30 detik = jarang
+  
   // Variabel untuk analisis yang lebih tajam
   private earHistoryForTrend: number[] = [];  // History untuk analisis trend
   private statusHistory: string[] = [];  // History status untuk konsistensi
@@ -156,23 +164,29 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   settings = {
     testDuration: 300,
     // Threshold yang lebih akurat dan tajam untuk deteksi kantuk
-    earWarningThreshold: 0.25,  // Threshold untuk "Sadar dan Fokus" (sedikit waspada) - ditingkatkan untuk lebih sensitif
-    earDangerThreshold: 0.20,   // Threshold untuk "Mulai Mengantuk" (mata mulai menutup) - ditingkatkan untuk lebih sensitif
-    earNormalThreshold: 0.28,   // Threshold minimum untuk "Normal" - mata benar-benar terbuka dengan baik
+    earWarningThreshold: 0.28,  // Threshold untuk "Sadar dan Fokus" - dinaikkan agar lebih sensitif
+    earDangerThreshold: 0.26,   // Threshold untuk "Mulai Mengantuk" - dinaikkan lebih tinggi agar lebih tajam dan sensitif
+    earNormalThreshold: 0.29,   // Threshold minimum untuk "Normal" - diturunkan agar lebih mudah masuk Normal
     enableSound: true,
     enableVibration: true,
-    // Smoothing untuk menghindari fluktuasi cepat - ditingkatkan untuk hasil lebih stabil
-    smoothingWindow: 8,  // Jumlah frame untuk smoothing (ditingkatkan dari 5 ke 8)
+    // Smoothing untuk menghindari fluktuasi cepat - dikurangi untuk responsif lebih cepat
+    smoothingWindow: 6,  // Jumlah frame untuk smoothing - dikurangi untuk responsif lebih cepat
     // Analisis trend dan variabilitas untuk akurasi lebih tinggi
-    trendWindow: 15,  // Jumlah frame untuk analisis trend
-    statusConsistencyFrames: 3,  // Jumlah frame konsisten sebelum status berubah
+    trendWindow: 12,  // Jumlah frame untuk analisis trend - dikurangi untuk responsif lebih cepat
+    statusConsistencyFrames: 2,  // Jumlah frame konsisten sebelum status berubah - dikurangi untuk lebih responsif
   };
 
   constructor(
     private firebaseService: FirebaseService,
     private loadingController: LoadingController,
-    private toastController: ToastController
-  ) {}
+    private toastController: ToastController,
+    private sanitizer: DomSanitizer
+  ) {
+    // Inisialisasi URL simulasi dengan sanitizer untuk keamanan
+    // Gunakan path relatif yang akan bekerja di development dan production
+    const gamePath = 'assets/threejs-city-game/index.html';
+    this.simulationUrl = this.sanitizer.bypassSecurityTrustResourceUrl(gamePath);
+  }
 
   async ngOnInit() {
     await this.loadTestHistory();
@@ -870,6 +884,7 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.earHistoryForTrend = [];
       this.statusHistory = [];
       this.marHistory = [];
+      this.warningHistory = []; // Reset warning history
       this.smoothedEAR = 0;
       this.statusMessage = 'Belum Memulai';
       this.statusClass = 'normal';
@@ -897,6 +912,8 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private resetTestStats() {
+    // Reset warning history
+    this.warningHistory = [];
     this.testStats = {
       totalBlinks: 0,
       avgEAR: 0,
@@ -1239,14 +1256,26 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     // Gunakan smoothed EAR dengan penyesuaian berdasarkan trend dan variabilitas
     let earForStatus = this.smoothedEAR;
     
-    // Jika trend menurun, kurangi sedikit EAR untuk deteksi lebih sensitif
+    // Jika trend menurun, kurangi EAR untuk deteksi lebih sensitif dan tajam
     if (trend < -0.01) {
-      earForStatus = earForStatus * 0.98;  // Penyesuaian kecil untuk trend menurun
+      earForStatus = earForStatus * 0.92;  // Penyesuaian lebih agresif untuk trend menurun (lebih tajam)
+    } else if (trend < -0.005) {
+      earForStatus = earForStatus * 0.94;  // Penyesuaian lebih agresif untuk trend sedikit menurun
+    } else if (trend < -0.002) {
+      earForStatus = earForStatus * 0.96;  // Penyesuaian untuk trend sedikit menurun
+    } else if (trend < 0) {
+      earForStatus = earForStatus * 0.98;  // Penyesuaian kecil untuk trend sedikit negatif
     }
     
     // Jika variabilitas tinggi, bisa menunjukkan kelelahan
     if (variability > 0.05) {
-      earForStatus = earForStatus * 0.99;  // Penyesuaian kecil untuk variabilitas tinggi
+      earForStatus = earForStatus * 0.93;  // Penyesuaian lebih agresif untuk variabilitas tinggi (lebih tajam)
+    } else if (variability > 0.03) {
+      earForStatus = earForStatus * 0.95;  // Penyesuaian lebih agresif untuk variabilitas sedang
+    } else if (variability > 0.02) {
+      earForStatus = earForStatus * 0.97;  // Penyesuaian untuk variabilitas rendah
+    } else if (variability > 0.015) {
+      earForStatus = earForStatus * 0.99;  // Penyesuaian kecil untuk variabilitas sangat rendah
     }
 
     const previousStatus = this.drowsinessLevel;
@@ -1256,37 +1285,57 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     let statusIcon = '';
     let statusColor = '';
     
-    // Status: MULAI MENGANTUK (Danger) - EAR sangat rendah, mata hampir tertutup
-    // Atau trend menurun dengan cepat + EAR rendah
+    // Hitung frekuensi warning dalam window waktu
+    const now = Date.now();
+    // Bersihkan warning history yang sudah lewat window
+    this.warningHistory = this.warningHistory.filter(
+      timestamp => now - timestamp < this.WARNING_TRACKING_WINDOW
+    );
+    const warningCount = this.warningHistory.length;
+    const isFrequentWarning = warningCount >= this.FREQUENT_WARNING_THRESHOLD;
+    const isRareWarning = warningCount <= this.RARE_WARNING_THRESHOLD;
+    
+    // Status: MULAI MENGANTUK (Danger) - EAR sangat rendah ATAU warning sering berbunyi
+    // Kriteria lebih sensitif: jika terlihat mengantuk (EAR rendah, trend turun, atau variabilitas tinggi) → Mulai Mengantuk
     if (earForStatus < this.settings.earDangerThreshold || 
-        (earForStatus < this.settings.earWarningThreshold && trend < -0.02)) {
+        (earForStatus < this.settings.earWarningThreshold && trend < -0.008) || // Trend menurun lebih sensitif
+        (earForStatus < this.settings.earWarningThreshold && variability > 0.035) || // Variabilitas lebih sensitif
+        (earForStatus < this.settings.earNormalThreshold && trend < -0.003) || // Jika EAR di bawah normal dan trend turun
+        (earForStatus < this.settings.earNormalThreshold && variability > 0.025) || // Jika EAR di bawah normal dan variabilitas tinggi
+        (earForStatus < this.settings.earNormalThreshold && isFrequentWarning) || // Jika EAR di bawah normal dan warning sering
+        isFrequentWarning) { // Jika warning sering berbunyi → Mulai Mengantuk
       newStatus = 'MULAI MENGANTUK';
       statusClass = 'danger';
       statusMessage = 'Mulai Mengantuk';
       statusIcon = 'warning';
       statusColor = 'danger';
     } 
-    // Status: SADAR DAN FOKUS (Warning) - EAR menurun, perlu waspada
-    // Atau trend menurun atau variabilitas tinggi
+    // Status: SADAR DAN FOKUS (Warning) - EAR menurun ATAU warning jarang berbunyi
+    // Atau trend menurun atau variabilitas tinggi, atau EAR di bawah warning threshold
     else if (earForStatus < this.settings.earWarningThreshold || 
-             trend < -0.005 || 
-             variability > 0.04) {
+             trend < -0.003 || 
+             variability > 0.03 ||
+             (earForStatus < this.settings.earNormalThreshold && trend < 0) ||
+             isRareWarning || // Jika warning jarang berbunyi → Sadar dan Fokus
+             !isFrequentWarning) { // Jika tidak sering warning → Sadar dan Fokus
       newStatus = 'SADAR DAN FOKUS';
       statusClass = 'warning';
       statusMessage = 'Sadar dan Fokus';
       statusIcon = 'alert-circle';
       statusColor = 'warning';
     } 
-    // Status: NORMAL (Safe) - EAR normal, mata terbuka dengan baik
-    // HARUS di atas threshold normal dan trend stabil/naik
-    else if (earForStatus >= this.settings.earNormalThreshold && trend >= -0.003) {
+    // Status: NORMAL (Safe) - Kriteria lebih longgar agar lebih mudah masuk Normal
+    else if (earForStatus >= this.settings.earNormalThreshold && 
+             trend >= -0.001 && // Trend boleh sedikit negatif (lebih longgar)
+             variability <= 0.025 && // Variabilitas boleh lebih tinggi (lebih longgar)
+             warningCount <= 1) { // Boleh ada 1 warning (lebih longgar)
       newStatus = 'NORMAL';
       statusClass = 'success';
       statusMessage = 'Normal';
       statusIcon = 'checkmark-circle';
       statusColor = 'success';
     }
-    // Status: SADAR DAN FOKUS (jika tidak memenuhi kriteria Normal)
+    // Default: SADAR DAN FOKUS (jika tidak memenuhi kriteria Normal)
     else {
       newStatus = 'SADAR DAN FOKUS';
       statusClass = 'warning';
@@ -1311,7 +1360,16 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.statusColor = statusColor;
       
       if (newStatus === 'MULAI MENGANTUK') {
-      this.triggerWarning();
+      // Hanya trigger warning jika benar-benar terlihat mengantuk (EAR sangat rendah atau tanda jelas)
+      const isReallyDrowsy = earForStatus < this.settings.earDangerThreshold || 
+                             (earForStatus < 0.24 && trend < -0.01) ||
+                             (earForStatus < 0.24 && variability > 0.04) ||
+                             isFrequentWarning;
+      
+      if (isReallyDrowsy) {
+        this.triggerWarning(earForStatus);
+      }
+      
       if (!previousStatus.includes('MULAI MENGANTUK')) {
         this.drowsyCount++;
       }
@@ -1354,14 +1412,21 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     return Math.sqrt(variance);  // Standar deviasi
   }
 
-  private triggerWarning() {
+  private triggerWarning(earValue: number) {
     if (!this.isTesting) return;
     const now = Date.now();
 
     if (now - this.lastWarningTime > this.WARNING_INTERVAL) {
+      // Tambahkan timestamp warning ke history untuk tracking frekuensi
+      this.warningHistory.push(now);
+      // Bersihkan warning history yang sudah lewat window
+      this.warningHistory = this.warningHistory.filter(
+        timestamp => now - timestamp < this.WARNING_TRACKING_WINDOW
+      );
+      
       this.showWarning = true;
       if (this.settings.enableSound) {
-        this.playWarningSound();
+        this.playWarningSound(earValue);
       }
       if (this.settings.enableVibration && 'vibrate' in navigator) {
         navigator.vibrate([200, 100, 200]);
@@ -1374,15 +1439,46 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  private playWarningSound() {
+  // Suara peringatan yang berbeda sesuai tingkat keparahan mata tertutup (EAR)
+  // Semakin rendah EAR (mata semakin tertutup), semakin keras dan panjang suaranya
+  private playWarningSound(earValue: number) {
     try {
       const audioContext = new (window.AudioContext ||
         (window as any).webkitAudioContext)();
       
-      // Buat suara peringatan yang sangat keras, tajam, dan berulang-ulang
-      const beepCount = 6; // 6 beep untuk lebih berulang dan menarik perhatian
-      const beepDuration = 0.2; // Durasi setiap beep sedikit lebih panjang untuk lebih jelas
-      const beepInterval = 0.04; // Interval sangat pendek untuk lebih cepat berulang
+      // Tentukan tingkat keparahan berdasarkan EAR
+      // EAR < 0.20 = sangat parah (mata hampir tertutup)
+      // EAR 0.20-0.23 = parah (mata mulai tertutup)
+      // EAR 0.23-0.25 = sedang (mata sedikit tertutup)
+      
+      let beepCount: number;
+      let beepDuration: number;
+      let beepInterval: number;
+      let frequency: number;
+      let volume: number;
+      
+      if (earValue < 0.20) {
+        // Sangat parah - suara paling keras dan panjang
+        beepCount = 3;
+        beepDuration = 0.4;
+        beepInterval = 0.15;
+        frequency = 3000; // Frekuensi sangat tinggi
+        volume = 1.0; // Volume maksimal
+      } else if (earValue < 0.23) {
+        // Parah - suara keras
+        beepCount = 2;
+        beepDuration = 0.3;
+        beepInterval = 0.2;
+        frequency = 2500; // Frekuensi tinggi
+        volume = 0.8; // Volume tinggi
+      } else {
+        // Sedang - suara peringatan
+        beepCount = 1;
+        beepDuration = 0.25;
+        beepInterval = 0.1;
+        frequency = 2000; // Frekuensi sedang-tinggi
+        volume = 0.6; // Volume sedang
+      }
       
       for (let i = 0; i < beepCount; i++) {
         const startTime = audioContext.currentTime + (i * (beepDuration + beepInterval));
@@ -1392,10 +1488,10 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
         const oscillator1 = audioContext.createOscillator();
         const gainNode1 = audioContext.createGain();
         oscillator1.type = 'square'; // Square wave untuk suara yang keras dan tajam
-        oscillator1.frequency.setValueAtTime(2500, startTime); // Frekuensi lebih tinggi (2500Hz) untuk lebih tajam
+        oscillator1.frequency.setValueAtTime(frequency, startTime); // Frekuensi sesuai tingkat keparahan
         // Tambahkan frequency sweep untuk efek yang lebih dramatis
-        oscillator1.frequency.exponentialRampToValueAtTime(3000, startTime + beepDuration * 0.3);
-        oscillator1.frequency.exponentialRampToValueAtTime(2500, startTime + beepDuration);
+        oscillator1.frequency.exponentialRampToValueAtTime(frequency * 1.2, startTime + beepDuration * 0.3);
+        oscillator1.frequency.exponentialRampToValueAtTime(frequency, startTime + beepDuration);
         
         // Oscillator kedua - harmoni untuk suara yang lebih kaya
         const oscillator2 = audioContext.createOscillator();
@@ -1414,10 +1510,10 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
         const sustainTime = beepDuration - 0.001;
         const releaseTime = 0.001; // Release cepat untuk suara yang tajam
         
-        // Volume untuk setiap oscillator (disesuaikan untuk balance)
-        const volume1 = 0.8; // Oscillator utama - volume tinggi
-        const volume2 = 0.4; // Oscillator harmoni - volume sedang
-        const volume3 = 0.3; // Oscillator low - volume rendah untuk body
+        // Volume untuk setiap oscillator - sesuai tingkat keparahan
+        const volume1 = volume; // Oscillator utama - volume sesuai tingkat keparahan
+        const volume2 = volume * 0.6; // Oscillator harmoni
+        const volume3 = volume * 0.5; // Oscillator low
         
         // Envelope untuk oscillator 1 (utama)
         gainNode1.gain.setValueAtTime(0, startTime);

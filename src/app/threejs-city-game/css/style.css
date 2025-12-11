@@ -176,3 +176,16 @@ input[type="text"] {
 #camera-toggle:active {
   transform: scale(0.98);
 }
+
+/* Status Banner - Move text up */
+.status-banner,
+[class*="status"],
+[id*="status"],
+.status-display,
+.status-info {
+  position: absolute;
+  top: 8px !important; /* Moved up from default position */
+  left: 50%;
+  transform: translateX(-50%) translateY(-10px) !important; /* Additional upward movement */
+  z-index: 100;
+}

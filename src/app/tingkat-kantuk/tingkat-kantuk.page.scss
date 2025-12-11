@@ -26,11 +26,11 @@ $border-radius-lg: 0.75rem;
   height: 100vh;
   background: white; // Changed from $background-light to white
   padding: $spacing-md;
-  padding-left: calc($spacing-md + 60px); // Add space for sidebar
+  padding-left: calc($spacing-md + 60px - 20px); // Add space for sidebar, dikurangi 20px untuk geser ke kiri sedikit
   padding-top: 110px; // Space for fixed header (90px header height + some margin)
   overflow-y: auto;
   overflow-x: hidden;
-  margin-left: 20px; // Additional spacing from sidebar
+  margin-left: calc(20px - 20px); // Additional spacing from sidebar, dikurangi 20px untuk geser ke kiri sedikit
   box-sizing: border-box;
   
   // Custom scrollbar styling
@@ -123,7 +123,8 @@ app-shared-header {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transform: scaleX(-1);
+      // Hapus transform scaleX(-1) agar video tidak mirror (sama dengan yang asli)
+      // transform: scaleX(-1);
     }
 
     canvas {
@@ -132,7 +133,7 @@ app-shared-header {
   }
 
   .detection-status {
-    margin: 1rem 0;
+    margin: 1rem 0; /* Normal margin */
     font-size: 1rem;
     background: rgba(var(--ion-color-light-rgb), 0.85);
     border-radius: 8px;
@@ -162,7 +163,7 @@ app-shared-header {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    margin-top: 1rem;
+    margin-top: 1rem; /* Normal margin */
   
     ion-button {
       margin: 0;
@@ -173,16 +174,13 @@ app-shared-header {
       display: flex;
       gap: 0.5rem;
       align-items: center;
+      justify-content: center; /* Center the refresh button */
       
       ion-button {
-        flex: 1;
+        flex: 0 0 auto; /* Don't flex, keep original size */
         margin: 0;
-        
-        &:nth-child(2) {
-          flex: 0 0 auto;
-          width: 48px;
-          min-width: 48px;
-        }
+        width: 48px;
+        min-width: 48px;
       }
     }
   }
@@ -311,7 +309,7 @@ ion-accordion {
   position: fixed;
   inset: 0;
   z-index: 1500;
-  background: #000;
+  background: #87CEEB; // Sky blue - menghilangkan warna hitam
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -354,13 +352,17 @@ ion-accordion {
   .simulation-fullscreen-content {
     flex: 1;
     position: relative;
-    background: #000;
+    background: #87CEEB; // Sky blue - menghilangkan warna hitam
     overflow: hidden;
+    padding-left: 20px; // Padding ke kiri untuk menggeser simulasi ke kiri sedikit
 
     iframe {
       position: absolute;
-      inset: 0;
-      width: 100%;
+      top: 0;
+      left: 20px; // Geser ke kiri sesuai padding
+      right: 0;
+      bottom: 0;
+      width: calc(100% - 20px); // Kurangi width sesuai padding
       height: 100%;
       border: none;
     }
@@ -453,7 +455,7 @@ ion-accordion {
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: #000;
+    background: #87CEEB; // Sky blue - menghilangkan warna hitam
     overflow: hidden;
     padding: 8px;
 
@@ -481,12 +483,13 @@ ion-accordion {
     }
 
     .detection-status {
-      margin-top: 6px;
+      margin-top: 0; /* Removed margin to move up more */
       padding: 6px;
       background: rgba(255, 255, 255, 0.05);
       border-radius: 4px;
       color: #fff;
       font-size: 10px;
+      transform: translateY(-15px); /* Move up by 15px (more) */
     }
 
     .controls {
@@ -659,7 +662,7 @@ ion-accordion {
   .simulation-window-content {
     flex: 1;
     position: relative;
-    background: #000;
+    background: #87CEEB; // Sky blue - menghilangkan warna hitam
     overflow: hidden;
 
     iframe {

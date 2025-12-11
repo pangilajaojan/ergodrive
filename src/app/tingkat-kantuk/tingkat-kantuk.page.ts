@@ -127,6 +127,9 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     averageEAR: number;
     duration: string;
     status: string;
+    testId?: string; // ID untuk tracking data EAR
+    earData?: Array<{ timestamp: number; earValue: number }>; // Data EAR untuk grafik
+    earDataSummary?: { minEAR: number; maxEAR: number; dataPoints: number }; // Summary data EAR
   }> = [];
 
   // Stats
@@ -144,6 +147,7 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   private cameraInstance: Camera | null = null;
   private earHistory: number[] = [];
   private earChart: any;
+  private earChartWebcam: any; // Chart untuk webcam window
   private lastWarningTime = 0;
   private mediaStreamTracks: MediaStreamTrack[] = [];
   private readonly MAX_HISTORY = 30;
@@ -159,6 +163,11 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   private earHistoryForTrend: number[] = [];  // History untuk analisis trend
   private statusHistory: string[] = [];  // History status untuk konsistensi
   private marHistory: number[] = [];  // History MAR untuk deteksi menguap
+  
+  // Variabel untuk Firebase EAR data tracking
+  private currentTestId: string | null = null;
+  private earDataSaveInterval: any = null; // Untuk batch save
+  private earDataBuffer: { timestamp: number; earValue: number }[] = []; // Buffer untuk batch save
 
   // Settings
   settings = {
@@ -200,6 +209,13 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   ngOnDestroy() {
     this.stopCamera();
     this.removeKeyboardEventListener();
+    // Destroy charts
+    if (this.earChart) {
+      this.earChart.destroy();
+    }
+    if (this.earChartWebcam) {
+      this.earChartWebcam.destroy();
+    }
   }
   
   // Menambahkan event listener untuk memastikan keyboard event tidak terblokir
@@ -243,14 +259,49 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.isLoadingHistory = true;
       const history = await this.firebaseService.getTestHistory(50);
       
-      // Convert timestamp to Date objects
-      this.testHistory = history.map((item) => ({
-        id: item.id,
-        timestamp: new Date(item.timestamp),
-        averageEAR: item.averageEAR,
-        duration: item.duration,
-        status: item.status,
-      }));
+      // Convert timestamp to Date objects dan include data EAR
+      // Load data EAR untuk test yang belum memiliki earData (backward compatibility)
+      const historyWithEAR = await Promise.all(
+        history.map(async (item) => {
+          let earData = item.earData || [];
+          let earDataSummary = item.earDataSummary;
+          
+          // Jika test memiliki testId tapi belum ada earData, load dari earData collection
+          if (item.testId && (!earData || earData.length === 0)) {
+            try {
+              const earDataFromFirebase = await this.firebaseService.getEARData(item.testId, 1000);
+              earData = earDataFromFirebase.map(d => ({
+                timestamp: d.timestamp,
+                earValue: d.earValue
+              }));
+              
+              if (earData.length > 0) {
+                const earValues = earData.map(d => d.earValue);
+                earDataSummary = {
+                  minEAR: Math.min(...earValues),
+                  maxEAR: Math.max(...earValues),
+                  dataPoints: earData.length
+                };
+              }
+            } catch (error) {
+              console.error('Error loading EAR data for test:', error);
+            }
+          }
+          
+          return {
+            id: item.id,
+            timestamp: new Date(item.timestamp),
+            averageEAR: item.averageEAR,
+            duration: item.duration,
+            status: item.status,
+            testId: item.testId,
+            earData: earData,
+            earDataSummary: earDataSummary,
+          };
+        })
+      );
+      
+      this.testHistory = historyWithEAR;
 
       await loading.dismiss();
       
@@ -269,13 +320,71 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   // Save test to Firebase
   async saveTestToFirebase() {
     try {
-      const testData = {
+      // Jika currentTestId belum ada, generate baru (untuk backward compatibility)
+      if (!this.currentTestId && this.isTesting) {
+        this.currentTestId = 'test_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        console.log('Generated new testId:', this.currentTestId);
+      }
+
+      // Save sisa data EAR yang belum tersimpan
+      await this.saveEARDataToFirebase();
+      
+      // Tunggu sebentar untuk memastikan data EAR sudah tersimpan di Firebase
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Load semua data EAR untuk test ini
+      let earDataArray: Array<{ timestamp: number; earValue: number }> = [];
+      let earDataSummary = { minEAR: 0, maxEAR: 0, dataPoints: 0 };
+      
+      if (this.currentTestId) {
+        console.log('Loading EAR data for testId:', this.currentTestId);
+        const earData = await this.firebaseService.getEARData(this.currentTestId, 1000);
+        console.log('Loaded EAR data count:', earData.length);
+        
+        earDataArray = earData.map(d => ({
+          timestamp: d.timestamp,
+          earValue: d.earValue
+        }));
+        
+        if (earDataArray.length > 0) {
+          const earValues = earDataArray.map(d => d.earValue);
+          earDataSummary = {
+            minEAR: Math.min(...earValues),
+            maxEAR: Math.max(...earValues),
+            dataPoints: earDataArray.length
+          };
+          console.log('EAR Summary:', earDataSummary);
+        }
+      } else {
+        console.warn('No currentTestId available when saving test history');
+      }
+      
+      const testData: any = {
         timestamp: this.testStartTime ? this.testStartTime.getTime() : Date.now(),
         averageEAR: this.testStats.avgEAR,
         duration: this.formatTime(this.testDuration),
         status: this.getDrowsinessLevel(),
       };
 
+      // Always include testId if it exists
+      if (this.currentTestId) {
+        testData.testId = this.currentTestId;
+        console.log('Including testId in testData:', this.currentTestId);
+      }
+
+      // Include earData if it's not empty
+      if (earDataArray.length > 0) {
+        testData.earData = earDataArray;
+        console.log('Including earData in testData:', earDataArray.length, 'points');
+      }
+
+      // Include earDataSummary if it has data points
+      if (earDataSummary.dataPoints > 0) {
+        testData.earDataSummary = earDataSummary;
+        console.log('Including earDataSummary in testData');
+      }
+
+      console.log('Saving testData to Firebase:', testData);
       await this.firebaseService.saveTestHistory(testData);
       await this.presentToast('Hasil tes berhasil disimpan', 'success');
       
@@ -295,6 +404,14 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     await loading.present();
 
     try {
+      // Cari testId dari test history untuk menghapus data EAR
+      const testItem = this.testHistory.find(item => item.id === testId);
+      if (testItem && testItem.testId) {
+        // Hapus data EAR terkait
+        await this.firebaseService.deleteEARDataByTestId(testItem.testId);
+      }
+      
+      // Hapus test history
       await this.firebaseService.deleteTestHistory(testId);
       await this.loadTestHistory();
       await loading.dismiss();
@@ -421,6 +538,8 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
         this.setupWebcamWindowDragAndResize();
         // Focus ke iframe setelah dimuat untuk memastikan keyboard input langsung bekerja
         this.focusSimulationIframe();
+        // Inisialisasi chart untuk webcam window
+        this.initChartWebcam();
       }, 300);
       
       await this.presentToast('Simulasi dimulai dengan deteksi kantuk aktif', 'success');
@@ -776,6 +895,15 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
         this.isTesting = false;
         this.stopTestTimer();
         
+        // Stop interval untuk save EAR data
+        if (this.earDataSaveInterval) {
+          clearInterval(this.earDataSaveInterval);
+          this.earDataSaveInterval = null;
+        }
+        
+        // Save sisa data EAR sebelum menutup
+        await this.saveEARDataToFirebase();
+        
         // Tampilkan summary analisis sebelum menutup
         await this.showTestSummary();
         
@@ -833,7 +961,19 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.statusColor = 'primary';
       this.drowsinessLevel = 'MULAI';
 
+      // Generate test ID untuk tracking data EAR di Firebase
+      this.currentTestId = 'test_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      this.earDataBuffer = []; // Reset buffer
+
       this.initChart();
+
+      // Load data EAR dari Firebase jika ada (untuk resume test)
+      await this.loadEARDataFromFirebase();
+
+      // Set interval untuk batch save data EAR ke Firebase setiap 5 detik
+      this.earDataSaveInterval = setInterval(() => {
+        this.saveEARDataToFirebase();
+      }, 5000);
 
       this.stopTestTimer();
       this.testTimer = setInterval(() => {
@@ -856,9 +996,19 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  stopTest() {
+  async stopTest() {
     this.isTesting = false;
     this.stopTestTimer();
+    
+    // Stop interval untuk save EAR data
+    if (this.earDataSaveInterval) {
+      clearInterval(this.earDataSaveInterval);
+      this.earDataSaveInterval = null;
+    }
+    
+    // Save sisa data EAR yang belum tersimpan
+    await this.saveEARDataToFirebase();
+    
     this.showTestSummary();
     this.statusMessage = 'Tes Selesai';
     this.statusClass = 'success';
@@ -872,9 +1022,18 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  resetTest() {
+  async resetTest() {
     try {
-      this.stopTest();
+      // Stop interval untuk save EAR data
+      if (this.earDataSaveInterval) {
+        clearInterval(this.earDataSaveInterval);
+        this.earDataSaveInterval = null;
+      }
+      
+      // Save sisa data sebelum reset
+      await this.saveEARDataToFirebase();
+      
+      await this.stopTest();
       this.testDuration = 0;
       this.averageEAR = 0;
       this.drowsyCount = 0;
@@ -885,6 +1044,8 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.statusHistory = [];
       this.marHistory = [];
       this.warningHistory = []; // Reset warning history
+      this.currentTestId = null; // Reset test ID
+      this.earDataBuffer = []; // Reset buffer
       this.smoothedEAR = 0;
       this.statusMessage = 'Belum Memulai';
       this.statusClass = 'normal';
@@ -1655,6 +1816,20 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
 
       chartData.push(ear);
 
+      // Simpan ke buffer untuk batch save ke Firebase
+      if (this.isTesting) {
+        // Jika currentTestId belum ada, generate baru
+        if (!this.currentTestId) {
+          this.currentTestId = 'test_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+          console.log('Generated new testId in updateChart:', this.currentTestId);
+        }
+        
+        this.earDataBuffer.push({
+          timestamp: Date.now(),
+          earValue: ear
+        });
+      }
+
       if (chartData.length > this.MAX_HISTORY) {
         chartData.shift();
       }
@@ -1673,8 +1848,197 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
         duration: 0,
         lazy: true,
       });
+
+      // Update chart di webcam window juga
+      this.updateChartWebcam(ear);
     } catch (error) {
       console.error('Error updating chart:', error);
+    }
+  }
+
+  // Inisialisasi chart untuk webcam window
+  private initChartWebcam() {
+    try {
+      const ctx = document.getElementById('earChartWebcam') as HTMLCanvasElement;
+      if (!ctx) {
+        console.warn('Webcam chart canvas element not found');
+        return;
+      }
+
+      if (this.earChartWebcam) {
+        this.earChartWebcam.destroy();
+      }
+
+      const dangerData = Array(this.MAX_HISTORY).fill(
+        this.settings.earDangerThreshold
+      );
+      const warningData = Array(this.MAX_HISTORY).fill(
+        this.settings.earWarningThreshold
+      );
+      
+      this.earChartWebcam = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: Array(this.MAX_HISTORY).fill(''),
+          datasets: [
+            {
+              label: 'EAR',
+              data: Array(this.MAX_HISTORY).fill(0),
+              borderColor: '#3880ff',
+              backgroundColor: 'rgba(56, 128, 255, 0.2)',
+              borderWidth: 2,
+              tension: 0.3,
+              fill: true,
+              pointRadius: 0,
+            },
+            {
+              label: 'Batas Ngantuk',
+              data: dangerData,
+              borderColor: '#dc3545',
+              borderWidth: 1,
+              borderDash: [5, 5],
+              pointRadius: 0,
+            },
+            {
+              label: 'Batas Waspada',
+              data: warningData,
+              borderColor: '#ffc107',
+              borderWidth: 1,
+              borderDash: [5, 5],
+              pointRadius: 0,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: {
+            duration: 0,
+          },
+          scales: {
+            y: {
+              min: 0,
+              max: 0.5,
+              grid: { color: 'rgba(255, 255, 255, 0.1)' },
+              ticks: { color: '#fff', font: { size: 10 } },
+            },
+            x: { display: false },
+          },
+          plugins: {
+            legend: { 
+              display: false, // Sembunyikan legend untuk menghemat ruang
+            },
+            tooltip: {
+              callbacks: {
+                label: (context: any) => {
+                  return `${context.dataset.label}: ${context.parsed.y.toFixed(3)}`;
+                },
+              },
+            },
+          },
+          interaction: { intersect: false, mode: 'index' },
+          elements: { line: { tension: 0.4 } },
+        },
+      });
+      
+      // Sync data dari chart utama jika ada
+      if (this.earChart && this.earChart.data.datasets[0].data.length > 0) {
+        const mainChartData = this.earChart.data.datasets[0].data;
+        const mainChartLabels = this.earChart.data.labels;
+        this.earChartWebcam.data.datasets[0].data = [...mainChartData];
+        this.earChartWebcam.data.labels = [...mainChartLabels];
+        this.earChartWebcam.update();
+      }
+      
+      console.log('Webcam chart initialized successfully');
+    } catch (error) {
+      console.error('Error initializing webcam chart:', error);
+    }
+  }
+
+  // Update chart di webcam window
+  private updateChartWebcam(ear: number) {
+    if (!this.earChartWebcam) return;
+    try {
+      const chartData = this.earChartWebcam.data.datasets[0].data;
+      chartData.push(ear);
+
+      if (chartData.length > this.MAX_HISTORY) {
+        chartData.shift();
+      }
+
+      const now = new Date();
+      const timeLabel = now.toLocaleTimeString();
+      const labels = this.earChartWebcam.data.labels;
+      if (labels.length < this.MAX_HISTORY) {
+        labels.push(timeLabel);
+      } else {
+        labels.shift();
+        labels.push(timeLabel);
+      }
+
+      this.earChartWebcam.update({
+        duration: 0,
+        lazy: true,
+      });
+    } catch (error) {
+      console.error('Error updating webcam chart:', error);
+    }
+  }
+
+  // ========== FIREBASE EAR DATA FUNCTIONS ==========
+
+  // Simpan data EAR ke Firebase (batch save)
+  private async saveEARDataToFirebase() {
+    if (!this.isTesting || !this.currentTestId || this.earDataBuffer.length === 0) {
+      return;
+    }
+
+    try {
+      // Save semua data di buffer ke Firebase
+      await this.firebaseService.saveEARDataBatch(this.earDataBuffer, this.currentTestId);
+      
+      // Clear buffer setelah berhasil save
+      this.earDataBuffer = [];
+    } catch (error) {
+      console.error('Error saving EAR data to Firebase:', error);
+    }
+  }
+
+  // Load data EAR dari Firebase untuk grafik
+  private async loadEARDataFromFirebase() {
+    if (!this.currentTestId) return;
+
+    try {
+      const earData = await this.firebaseService.getEARData(this.currentTestId, 100);
+      
+      if (earData.length > 0 && this.earChart) {
+        // Update chart dengan data dari Firebase
+        const earValues = earData.map(d => d.earValue);
+        const labels = earData.map((d, i) => {
+          const date = new Date(d.timestamp);
+          return date.toLocaleTimeString();
+        });
+        
+        // Pastikan tidak melebihi MAX_HISTORY
+        const dataToShow = earValues.slice(-this.MAX_HISTORY);
+        const labelsToShow = labels.slice(-this.MAX_HISTORY);
+        
+        this.earChart.data.datasets[0].data = dataToShow;
+        this.earChart.data.labels = labelsToShow;
+        this.earChart.update();
+        
+        // Update chart webcam juga jika ada
+        if (this.earChartWebcam) {
+          this.earChartWebcam.data.datasets[0].data = dataToShow;
+          this.earChartWebcam.data.labels = labelsToShow;
+          this.earChartWebcam.update();
+        }
+        
+        console.log(`Loaded ${earData.length} EAR data points from Firebase`);
+      }
+    } catch (error) {
+      console.error('Error loading EAR data from Firebase:', error);
     }
   }
 }

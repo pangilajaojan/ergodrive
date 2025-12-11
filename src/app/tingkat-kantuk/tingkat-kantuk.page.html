@@ -101,6 +101,11 @@
             <ion-label>
               <h3>Test pada {{ test.timestamp | date:'medium' }}</h3>
               <p>EAR: {{ test.averageEAR | number:'1.2-2' }} • Durasi: {{ test.duration }}</p>
+              <p *ngIf="test.earDataSummary" style="font-size: 0.85em; color: var(--ion-color-medium);">
+                Data Points: {{ test.earDataSummary.dataPoints }} • 
+                Min: {{ test.earDataSummary.minEAR | number:'1.2-2' }} • 
+                Max: {{ test.earDataSummary.maxEAR | number:'1.2-2' }}
+              </p>
             </ion-label>
             <ion-badge [color]="getStatusBadgeColor(test.status)" slot="end">
               {{ test.status }}
@@ -267,6 +272,9 @@
             <ion-icon name="time"></ion-icon>
             <ion-label>Sedang Berlangsung: {{ formatTime(testDuration) }}</ion-label>
           </ion-chip>
+        </div>
+        <div class="chart-container-webcam">
+          <canvas id="earChartWebcam"></canvas>
         </div>
       </div>
       <!-- Resize handles -->

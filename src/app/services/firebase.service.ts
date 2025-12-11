@@ -20,6 +20,21 @@ export interface TestHistoryItem {
   duration: string;
   status: string;
   userId?: string;
+  testId?: string; // ID test untuk tracking data EAR
+  earData?: EARDataPoint[]; // Data EAR untuk grafik
+  earDataSummary?: {
+    minEAR: number;
+    maxEAR: number;
+    dataPoints: number;
+  }; // Summary data EAR
+}
+
+export interface EARDataPoint {
+  id?: string;
+  timestamp: number;
+  earValue: number;
+  testId?: string; // ID test yang sedang berjalan
+  userId?: string;
 }
 
 @Injectable({
@@ -74,11 +89,29 @@ export class FirebaseService {
       const testHistoryRef = ref(this.db, `testHistory/${this.userId}`);
       const newTestRef = push(testHistoryRef);
       
-      const dataToSave = {
-        ...testData,
+      // Remove undefined values to avoid Firebase errors
+      const dataToSave: any = {
         userId: this.userId,
         timestamp: testData.timestamp || Date.now(),
+        averageEAR: testData.averageEAR,
+        duration: testData.duration,
+        status: testData.status,
       };
+
+      // Only include testId if it's not undefined or null
+      if (testData.testId) {
+        dataToSave.testId = testData.testId;
+      }
+
+      // Only include earData if it exists and is not empty
+      if (testData.earData && testData.earData.length > 0) {
+        dataToSave.earData = testData.earData;
+      }
+
+      // Only include earDataSummary if it exists
+      if (testData.earDataSummary) {
+        dataToSave.earDataSummary = testData.earDataSummary;
+      }
 
       await set(newTestRef, dataToSave);
       console.log('Test history saved successfully');
@@ -189,6 +222,121 @@ export class FirebaseService {
         averageEAR: 0,
         mostCommonStatus: 'N/A',
       };
+    }
+  }
+
+  // ========== EAR DATA FUNCTIONS ==========
+
+  // Simpan data EAR real-time ke Firebase
+  async saveEARData(earValue: number, testId?: string): Promise<string> {
+    try {
+      const earDataRef = ref(this.db, `earData/${this.userId}`);
+      const newEarRef = push(earDataRef);
+      
+      const dataToSave: Omit<EARDataPoint, 'id'> = {
+        timestamp: Date.now(),
+        earValue: earValue,
+        testId: testId || 'current',
+        userId: this.userId,
+      };
+
+      await set(newEarRef, dataToSave);
+      return newEarRef.key || '';
+    } catch (error) {
+      console.error('Error saving EAR data:', error);
+      throw error;
+    }
+  }
+
+  // Batch save multiple EAR data points
+  async saveEARDataBatch(earDataPoints: { timestamp: number; earValue: number }[], testId?: string): Promise<void> {
+    try {
+      if (earDataPoints.length === 0) return;
+
+      const earDataRef = ref(this.db, `earData/${this.userId}`);
+      
+      // Save each data point
+      const savePromises = earDataPoints.map((dataPoint) => {
+        const newEarRef = push(earDataRef);
+        const dataToSave = {
+          timestamp: dataPoint.timestamp,
+          earValue: dataPoint.earValue,
+          testId: testId || 'current',
+          userId: this.userId,
+        };
+        return set(newEarRef, dataToSave);
+      });
+
+      await Promise.all(savePromises);
+      console.log(`Saved ${earDataPoints.length} EAR data points to Firebase`);
+    } catch (error) {
+      console.error('Error batch saving EAR data:', error);
+      throw error;
+    }
+  }
+
+  // Ambil data EAR untuk grafik (dari test tertentu atau semua)
+  async getEARData(testId?: string, limit: number = 100): Promise<EARDataPoint[]> {
+    try {
+      const earDataRef = ref(this.db, `earData/${this.userId}`);
+      let earQuery = query(
+        earDataRef,
+        orderByChild('timestamp'),
+        limitToLast(limit)
+      );
+
+    const snapshot = await get(earQuery);
+    
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      const earArray: EARDataPoint[] = [];
+
+      Object.keys(data).forEach((key) => {
+        const item = data[key];
+        // Filter by testId jika diperlukan
+        if (!testId || item.testId === testId) {
+          earArray.push({
+            id: key,
+            ...item,
+          });
+        }
+      });
+
+      // Sort by timestamp ascending (oldest first)
+      return earArray.sort((a, b) => a.timestamp - b.timestamp);
+    }
+
+    return [];
+    } catch (error) {
+      console.error('Error getting EAR data:', error);
+      return [];
+    }
+  }
+
+  // Hapus data EAR untuk test tertentu
+  async deleteEARDataByTestId(testId: string): Promise<void> {
+    try {
+      const earDataRef = ref(this.db, `earData/${this.userId}`);
+      const snapshot = await get(earDataRef);
+      
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const deletePromises: Promise<void>[] = [];
+        
+        Object.keys(data).forEach((key) => {
+          if (data[key].testId === testId) {
+            const itemRef = ref(this.db, `earData/${this.userId}/${key}`);
+            deletePromises.push(remove(itemRef));
+          }
+        });
+        
+        if (deletePromises.length > 0) {
+          await Promise.all(deletePromises);
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting EAR data:', error);
+      throw error;
     }
   }
 }   

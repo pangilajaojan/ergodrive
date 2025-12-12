@@ -123,8 +123,7 @@ app-shared-header {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      // Hapus transform scaleX(-1) agar video tidak mirror (sama dengan yang asli)
-      // transform: scaleX(-1);
+      transform: scaleX(-1); // Mirror video (balik arah)
     }
 
     canvas {
@@ -179,8 +178,8 @@ app-shared-header {
       ion-button {
         flex: 0 0 auto; /* Don't flex, keep original size */
         margin: 0;
-        width: 48px;
-        min-width: 48px;
+          width: 48px;
+          min-width: 48px;
       }
     }
   }
@@ -331,6 +330,7 @@ ion-accordion {
       color: #fff;
       font-size: 16px;
       font-weight: 600;
+      margin-left: 20px; // Geser ke kanan sedikit
 
       ion-icon {
         font-size: 20px;
@@ -471,6 +471,7 @@ ion-accordion {
         width: 100%;
         height: 100%;
         object-fit: cover;
+        transform: scaleX(-1); // Mirror video (balik arah)
       }
 
       canvas {
@@ -479,6 +480,7 @@ ion-accordion {
         left: 0;
         width: 100%;
         height: 100%;
+        transform: scaleX(-1); // Mirror canvas (balik arah)
       }
     }
 

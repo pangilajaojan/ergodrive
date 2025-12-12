@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "testHistory": {
+      "$userId": {
+        ".read": true,
+        ".write": true,
+        ".indexOn": ["timestamp"]
+      }
+    },
+    "earData": {
+      "$userId": {
+        ".read": true,
+        ".write": true,
+        ".indexOn": ["timestamp", "testId"]
+      }
+    }
+  }
+}
+

@@ -27,7 +27,7 @@ import { environment } from '../environments/environment';
     CommonModule,
     IonicModule.forRoot({
       mode: 'md',
-      rippleEffect: true,
+      rippleEffect: false,
       backButtonText: '',
       loadingSpinner: 'crescent',
     }),

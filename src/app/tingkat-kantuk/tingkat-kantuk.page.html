@@ -11,9 +11,6 @@
       (simulationClick)="openSimulation()"
     >
       <div class="action-buttons" slot="actions">
-        <ion-button (click)="refreshData()" fill="clear" size="small">
-          <ion-icon name="refresh-outline"></ion-icon>
-        </ion-button>
         <ion-button (click)="exportData()" fill="clear" size="small">
           <ion-icon name="download-outline"></ion-icon>
         </ion-button>
@@ -35,11 +32,6 @@
           <ion-icon slot="start" [name]="isCameraOn ? 'camera-off' : 'camera'"></ion-icon>
           {{ isCameraOn ? 'Matikan Kamera' : 'Nyalakan Kamera' }}
         </ion-button>
-        <div class="test-controls">
-          <ion-button (click)="resetTest()" color="medium" fill="outline" [disabled]="isTesting">
-            <ion-icon name="refresh"></ion-icon>
-          </ion-button>
-        </div>
         
         <ion-chip *ngIf="isTesting" color="danger">
           <ion-icon name="time"></ion-icon>

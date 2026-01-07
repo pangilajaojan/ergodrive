@@ -25,7 +25,7 @@
         <canvas #canvas></canvas>
       </div>
       <div class="detection-status">
-        <p>Status: <span [ngClass]="statusClass">{{ statusDescription }}</span></p>
+        <p><span [ngClass]="statusClass">{{ statusDescription }}</span></p>
       </div>
       <div class="controls">
         <ion-button (click)="toggleCamera()" [color]="isCameraOn ? 'medium' : 'primary'" fill="outline">

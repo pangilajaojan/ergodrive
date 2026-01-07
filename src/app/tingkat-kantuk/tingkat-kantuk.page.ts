@@ -172,17 +172,17 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
   // Settings
   settings = {
     testDuration: 300,
-    // Threshold yang lebih akurat dan tajam untuk deteksi kantuk
-    earWarningThreshold: 0.28,  // Threshold untuk "Sadar dan Fokus" - dinaikkan agar lebih sensitif
-    earDangerThreshold: 0.26,   // Threshold untuk "Mulai Mengantuk" - dinaikkan lebih tinggi agar lebih tajam dan sensitif
-    earNormalThreshold: 0.29,   // Threshold minimum untuk "Normal" - diturunkan agar lebih mudah masuk Normal
+    // Threshold yang lebih akurat - EAR lebih rendah = lebih mengantuk
+    earWarningThreshold: 0.25,  // Threshold untuk "Sadar dan Fokus" - EAR di bawah ini mulai waspada
+    earDangerThreshold: 0.20,   // Threshold untuk "Mulai Mengantuk" - EAR di bawah ini baru benar-benar mengantuk
+    earNormalThreshold: 0.28,   // Threshold minimum untuk "Normal" - EAR di atas ini dianggap normal
     enableSound: true,
     enableVibration: true,
     // Smoothing untuk menghindari fluktuasi cepat - dikurangi untuk responsif lebih cepat
     smoothingWindow: 6,  // Jumlah frame untuk smoothing - dikurangi untuk responsif lebih cepat
     // Analisis trend dan variabilitas untuk akurasi lebih tinggi
     trendWindow: 12,  // Jumlah frame untuk analisis trend - dikurangi untuk responsif lebih cepat
-    statusConsistencyFrames: 2,  // Jumlah frame konsisten sebelum status berubah - dikurangi untuk lebih responsif
+    statusConsistencyFrames: 1,  // Jumlah frame konsisten sebelum status berubah - dikurangi untuk lebih responsif dan real-time
   };
 
   constructor(
@@ -1414,29 +1414,21 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     // Analisis variabilitas EAR (EAR yang sangat bervariasi bisa menunjukkan kelelahan)
     const variability = this.calculateEARVariability();
 
-    // Gunakan smoothed EAR dengan penyesuaian berdasarkan trend dan variabilitas
+    // Gunakan smoothed EAR dengan penyesuaian minimal - hanya untuk kasus ekstrem
     let earForStatus = this.smoothedEAR;
     
-    // Jika trend menurun, kurangi EAR untuk deteksi lebih sensitif dan tajam
-    if (trend < -0.01) {
-      earForStatus = earForStatus * 0.92;  // Penyesuaian lebih agresif untuk trend menurun (lebih tajam)
-    } else if (trend < -0.005) {
-      earForStatus = earForStatus * 0.94;  // Penyesuaian lebih agresif untuk trend sedikit menurun
-    } else if (trend < -0.002) {
-      earForStatus = earForStatus * 0.96;  // Penyesuaian untuk trend sedikit menurun
-    } else if (trend < 0) {
-      earForStatus = earForStatus * 0.98;  // Penyesuaian kecil untuk trend sedikit negatif
+    // Hanya sesuaikan EAR jika trend sangat menurun (tanda jelas mengantuk)
+    if (trend < -0.015) {
+      earForStatus = earForStatus * 0.97;  // Penyesuaian kecil hanya untuk trend sangat menurun
+    } else if (trend < -0.01) {
+      earForStatus = earForStatus * 0.98;  // Penyesuaian minimal untuk trend menurun
     }
     
-    // Jika variabilitas tinggi, bisa menunjukkan kelelahan
-    if (variability > 0.05) {
-      earForStatus = earForStatus * 0.93;  // Penyesuaian lebih agresif untuk variabilitas tinggi (lebih tajam)
-    } else if (variability > 0.03) {
-      earForStatus = earForStatus * 0.95;  // Penyesuaian lebih agresif untuk variabilitas sedang
-    } else if (variability > 0.02) {
-      earForStatus = earForStatus * 0.97;  // Penyesuaian untuk variabilitas rendah
-    } else if (variability > 0.015) {
-      earForStatus = earForStatus * 0.99;  // Penyesuaian kecil untuk variabilitas sangat rendah
+    // Hanya sesuaikan jika variabilitas sangat tinggi (tanda jelas kelelahan)
+    if (variability > 0.06) {
+      earForStatus = earForStatus * 0.97;  // Penyesuaian kecil hanya untuk variabilitas sangat tinggi
+    } else if (variability > 0.05) {
+      earForStatus = earForStatus * 0.99;  // Penyesuaian minimal untuk variabilitas tinggi
     }
 
     const previousStatus = this.drowsinessLevel;
@@ -1456,47 +1448,34 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
     const isFrequentWarning = warningCount >= this.FREQUENT_WARNING_THRESHOLD;
     const isRareWarning = warningCount <= this.RARE_WARNING_THRESHOLD;
     
-    // Status: MULAI MENGANTUK (Danger) - EAR sangat rendah ATAU warning sering berbunyi
-    // Kriteria lebih sensitif: jika terlihat mengantuk (EAR rendah, trend turun, atau variabilitas tinggi) → Mulai Mengantuk
+    // Status: MULAI MENGANTUK (Danger) - Hanya jika EAR sangat rendah (mata benar-benar tertutup/tertutup sebagian)
+    // Kriteria lebih ketat: hanya jika EAR sangat rendah DAN ada tanda jelas mengantuk
     if (earForStatus < this.settings.earDangerThreshold || 
-        (earForStatus < this.settings.earWarningThreshold && trend < -0.008) || // Trend menurun lebih sensitif
-        (earForStatus < this.settings.earWarningThreshold && variability > 0.035) || // Variabilitas lebih sensitif
-        (earForStatus < this.settings.earNormalThreshold && trend < -0.003) || // Jika EAR di bawah normal dan trend turun
-        (earForStatus < this.settings.earNormalThreshold && variability > 0.025) || // Jika EAR di bawah normal dan variabilitas tinggi
-        (earForStatus < this.settings.earNormalThreshold && isFrequentWarning) || // Jika EAR di bawah normal dan warning sering
-        isFrequentWarning) { // Jika warning sering berbunyi → Mulai Mengantuk
+        (earForStatus < this.settings.earWarningThreshold && trend < -0.012 && variability > 0.04)) { // EAR rendah + trend sangat turun + variabilitas tinggi
       newStatus = 'MULAI MENGANTUK';
       statusClass = 'danger';
       statusMessage = 'Mulai Mengantuk';
       statusIcon = 'warning';
       statusColor = 'danger';
     } 
-    // Status: SADAR DAN FOKUS (Warning) - EAR menurun ATAU warning jarang berbunyi
-    // Atau trend menurun atau variabilitas tinggi, atau EAR di bawah warning threshold
+    // Status: SADAR DAN FOKUS (Warning) - EAR menurun atau di bawah warning threshold
     else if (earForStatus < this.settings.earWarningThreshold || 
-             trend < -0.003 || 
-             variability > 0.03 ||
-             (earForStatus < this.settings.earNormalThreshold && trend < 0) ||
-             isRareWarning || // Jika warning jarang berbunyi → Sadar dan Fokus
-             !isFrequentWarning) { // Jika tidak sering warning → Sadar dan Fokus
+             (earForStatus < this.settings.earNormalThreshold && trend < -0.005)) { // EAR di bawah normal dan trend menurun
       newStatus = 'SADAR DAN FOKUS';
       statusClass = 'warning';
       statusMessage = 'Sadar dan Fokus';
       statusIcon = 'alert-circle';
       statusColor = 'warning';
     } 
-    // Status: NORMAL (Safe) - Kriteria lebih longgar agar lebih mudah masuk Normal
-    else if (earForStatus >= this.settings.earNormalThreshold && 
-             trend >= -0.001 && // Trend boleh sedikit negatif (lebih longgar)
-             variability <= 0.025 && // Variabilitas boleh lebih tinggi (lebih longgar)
-             warningCount <= 1) { // Boleh ada 1 warning (lebih longgar)
+    // Status: NORMAL (Safe) - EAR di atas normal threshold
+    else if (earForStatus >= this.settings.earNormalThreshold) {
       newStatus = 'NORMAL';
       statusClass = 'success';
       statusMessage = 'Normal';
       statusIcon = 'checkmark-circle';
       statusColor = 'success';
     }
-    // Default: SADAR DAN FOKUS (jika tidak memenuhi kriteria Normal)
+    // Default: SADAR DAN FOKUS (jika EAR antara warning dan normal)
     else {
       newStatus = 'SADAR DAN FOKUS';
       statusClass = 'warning';
@@ -1504,6 +1483,12 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       statusIcon = 'alert-circle';
       statusColor = 'warning';
     }
+
+    // Status description dengan informasi lebih detail - selalu update mengikuti EAR real-time
+    const trendText = trend < -0.01 ? '↓' : trend > 0.01 ? '↑' : '→';
+    const variabilityText = variability > 0.05 ? ' (Tinggi)' : variability > 0.03 ? ' (Sedang)' : ' (Rendah)';
+    // Update statusDescription langsung dengan statusMessage yang baru dihitung (real-time)
+    this.statusDescription = `EAR: ${earForStatus.toFixed(3)} ${trendText} | Variabilitas: ${(variability * 100).toFixed(1)}%${variabilityText} | Status: ${statusMessage}`;
 
     // Cek konsistensi status sebelum mengubah (menghindari fluktuasi cepat)
     this.statusHistory.push(newStatus);
@@ -1538,11 +1523,6 @@ export class TingkatKantukPage implements OnInit, AfterViewInit, OnDestroy {
       this.showWarning = false;
     } 
     }
-
-    // Status description dengan informasi lebih detail
-    const trendText = trend < -0.01 ? '↓' : trend > 0.01 ? '↑' : '→';
-    const variabilityText = variability > 0.05 ? ' (Tinggi)' : variability > 0.03 ? ' (Sedang)' : ' (Rendah)';
-    this.statusDescription = `EAR: ${earForStatus.toFixed(3)} ${trendText} | Variabilitas: ${(variability * 100).toFixed(1)}%${variabilityText} | Status: ${this.statusMessage}`;
   }
 
   // Fungsi untuk menghitung trend EAR (apakah cenderung menurun, naik, atau stabil)

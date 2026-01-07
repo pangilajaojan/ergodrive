@@ -823,13 +823,13 @@ function createMapBoundary() {
   const maxExtent = CITY.size / 2;
   const minExtent = -CITY.size / 2;
   
-  // Parameter pagar
-  const poleHeight = 3; // Tinggi tiang
-  const poleWidth = 0.25; // Lebar/diameter tiang
-  const barWidth = 0.15; // Lebar bar horizontal
-  const barThickness = 0.1; // Ketebalan bar
-  const poleSpacing = 10; // Jarak antar tiang
-  const numBars = 3; // Jumlah bar horizontal
+  // Parameter pagar - seperti tembok Cina (lebih tinggi dan solid)
+  const poleHeight = 10; // Tinggi tiang - dinaikkan seperti tembok Cina
+  const poleWidth = 0.5; // Lebar/diameter tiang - diperbesar untuk lebih solid
+  const barWidth = 0.3; // Lebar bar horizontal - diperbesar
+  const barThickness = 0.2; // Ketebalan bar - diperbesar
+  const poleSpacing = 8; // Jarak antar tiang - dikurangi untuk lebih padat
+  const numBars = 5; // Jumlah bar horizontal - ditambah untuk lebih tinggi
   
   // Material pagar
   const fenceMaterial = new THREE.MeshStandardMaterial({
@@ -839,9 +839,17 @@ function createMapBoundary() {
   });
   
   const poleMaterial = new THREE.MeshStandardMaterial({
-    color: 0x555555, // Lebih gelap untuk tiang
-    metalness: 0.7,
-    roughness: 0.3,
+    color: 0x8B7355, // Warna seperti batu/tembok Cina
+    metalness: 0.3,
+    roughness: 0.8,
+  });
+  
+  // Material untuk dinding solid di belakang pagar (tidak bisa ditembus)
+  const wallMaterial = new THREE.MeshStandardMaterial({
+    color: 0x6B5B4A, // Warna tembok yang lebih gelap
+    metalness: 0.2,
+    roughness: 0.9,
+    side: THREE.DoubleSide, // Render kedua sisi
   });
   
   // Fungsi helper untuk membuat pagar di satu sisi
@@ -855,14 +863,14 @@ function createMapBoundary() {
       const poleX = startX + (endX - startX) * t;
       const poleZ = startZ + (endZ - startZ) * t;
       
-      // Tiang pagar
+      // Tiang pagar - lebih besar dan solid
       const pole = new THREE.Mesh(
         new THREE.CylinderGeometry(poleWidth / 2, poleWidth / 2, poleHeight, 8),
         poleMaterial
       );
       pole.position.set(poleX, poleHeight / 2, poleZ);
-      // Optimasi: Nonaktifkan shadow casting pada street light untuk performa lebih baik
-      pole.castShadow = false;
+      pole.castShadow = true;
+      pole.receiveShadow = true;
       scene.add(pole);
       
       // Bar horizontal (3 bar) - hanya buat jika bukan tiang terakhir
@@ -887,8 +895,8 @@ function createMapBoundary() {
             );
             bar.position.set(poleX, barY, poleZ + actualSpacing / 2);
           }
-          // Optimasi: Nonaktifkan shadow casting pada street light bar untuk performa lebih baik
-          bar.castShadow = false;
+          bar.castShadow = true;
+          bar.receiveShadow = true;
           scene.add(bar);
         }
       }
@@ -907,6 +915,50 @@ function createMapBoundary() {
   
   // Sisi Timur (kanan) - vertikal
   createFenceSide(maxExtent, minExtent, maxExtent, maxExtent, false);
+  
+  // Tambahkan dinding solid di belakang pagar (tidak bisa ditembus)
+  const wallThickness = 0.5; // Ketebalan dinding
+  const wallHeight = poleHeight; // Tinggi dinding sama dengan pagar
+  
+  // Dinding Utara (atas)
+  const northWall = new THREE.Mesh(
+    new THREE.BoxGeometry(CITY.size, wallHeight, wallThickness),
+    wallMaterial
+  );
+  northWall.position.set(0, wallHeight / 2, maxExtent + wallThickness / 2);
+  northWall.castShadow = true;
+  northWall.receiveShadow = true;
+  scene.add(northWall);
+  
+  // Dinding Selatan (bawah)
+  const southWall = new THREE.Mesh(
+    new THREE.BoxGeometry(CITY.size, wallHeight, wallThickness),
+    wallMaterial
+  );
+  southWall.position.set(0, wallHeight / 2, minExtent - wallThickness / 2);
+  southWall.castShadow = true;
+  southWall.receiveShadow = true;
+  scene.add(southWall);
+  
+  // Dinding Barat (kiri)
+  const westWall = new THREE.Mesh(
+    new THREE.BoxGeometry(wallThickness, wallHeight, CITY.size),
+    wallMaterial
+  );
+  westWall.position.set(minExtent - wallThickness / 2, wallHeight / 2, 0);
+  westWall.castShadow = true;
+  westWall.receiveShadow = true;
+  scene.add(westWall);
+  
+  // Dinding Timur (kanan)
+  const eastWall = new THREE.Mesh(
+    new THREE.BoxGeometry(wallThickness, wallHeight, CITY.size),
+    wallMaterial
+  );
+  eastWall.position.set(maxExtent + wallThickness / 2, wallHeight / 2, 0);
+  eastWall.castShadow = true;
+  eastWall.receiveShadow = true;
+  scene.add(eastWall);
 }
 
 function createLinearPark() {
@@ -3341,13 +3393,100 @@ function updateCar() {
   const movingBackward = keyboardState["ArrowDown"] || keyboardState["KeyS"];
   const isMoving = movingForward || movingBackward;
 
+  // Parameter mobil untuk collision detection
+  const carLength = 3.5; // Panjang mobil (dari center ke depan/belakang)
+  const carWidth = 1.8; // Lebar mobil
+  const safetyMargin = 1.5; // Margin keamanan dari pagar (dikurangi agar lebih dekat)
+  
+  // Batas map dengan margin yang cukup untuk mencegah bagian depan mobil menembus
+  const maxExtent = CITY.size / 2 - safetyMargin - carLength / 2; // Kurangi dengan setengah panjang mobil
+  const minExtent = -CITY.size / 2 + safetyMargin + carLength / 2;
+  
+  // Simpan posisi sebelumnya untuk collision detection
+  const prevX = car.position.x;
+  const prevZ = car.position.z;
+  
+  // Hitung posisi depan mobil berdasarkan rotasi
+  const frontOffsetX = Math.sin(car.rotation.y) * (carLength / 2);
+  const frontOffsetZ = Math.cos(car.rotation.y) * (carLength / 2);
+  const rearOffsetX = -Math.sin(car.rotation.y) * (carLength / 2);
+  const rearOffsetZ = -Math.cos(car.rotation.y) * (carLength / 2);
+  
+  const frontX = car.position.x + frontOffsetX;
+  const frontZ = car.position.z + frontOffsetZ;
+  const rearX = car.position.x + rearOffsetX;
+  const rearZ = car.position.z + rearOffsetZ;
+
+  // Cek collision SEBELUM bergerak - khusus untuk bagian depan mobil
+  let canMoveForward = true;
+  let canMoveBackward = true;
+  
   if (movingForward) {
+    // Cek apakah bagian depan akan menembus pagar jika bergerak maju
+    const nextFrontX = frontX + Math.sin(car.rotation.y) * speed;
+    const nextFrontZ = frontZ + Math.cos(car.rotation.y) * speed;
+    
+    if (nextFrontX > maxExtent || nextFrontX < minExtent || 
+        nextFrontZ > maxExtent || nextFrontZ < minExtent) {
+      canMoveForward = false;
+    }
+  }
+  
+  if (movingBackward) {
+    // Cek apakah bagian belakang akan menembus pagar jika bergerak mundur
+    const nextRearX = rearX - Math.sin(car.rotation.y) * speed * 0.5;
+    const nextRearZ = rearZ - Math.cos(car.rotation.y) * speed * 0.5;
+    
+    if (nextRearX > maxExtent || nextRearX < minExtent || 
+        nextRearZ > maxExtent || nextRearZ < minExtent) {
+      canMoveBackward = false;
+    }
+  }
+
+  // Hanya bergerak jika tidak akan menembus pagar
+  if (movingForward && canMoveForward) {
     car.position.x += Math.sin(car.rotation.y) * speed;
     car.position.z += Math.cos(car.rotation.y) * speed;
   }
-  if (movingBackward) {
+  if (movingBackward && canMoveBackward) {
     car.position.x -= Math.sin(car.rotation.y) * speed * 0.5;
     car.position.z -= Math.cos(car.rotation.y) * speed * 0.5;
+  }
+  
+  // Pastikan bagian depan mobil tidak melewati batas pagar (cek setelah pergerakan)
+  const fenceBoundary = CITY.size / 2 - safetyMargin;
+  const currentFrontX = car.position.x + Math.sin(car.rotation.y) * (carLength / 2);
+  const currentFrontZ = car.position.z + Math.cos(car.rotation.y) * (carLength / 2);
+  
+  // Hitung ulang posisi center mobil jika bagian depan menembus batas
+  if (currentFrontX > fenceBoundary) {
+    // Geser mobil mundur agar bagian depan tepat di batas
+    car.position.x = fenceBoundary - Math.sin(car.rotation.y) * (carLength / 2);
+  } else if (currentFrontX < -fenceBoundary) {
+    // Geser mobil mundur agar bagian depan tepat di batas
+    car.position.x = -fenceBoundary - Math.sin(car.rotation.y) * (carLength / 2);
+  }
+  
+  if (currentFrontZ > fenceBoundary) {
+    // Geser mobil mundur agar bagian depan tepat di batas
+    car.position.z = fenceBoundary - Math.cos(car.rotation.y) * (carLength / 2);
+  } else if (currentFrontZ < -fenceBoundary) {
+    // Geser mobil mundur agar bagian depan tepat di batas
+    car.position.z = -fenceBoundary - Math.cos(car.rotation.y) * (carLength / 2);
+  }
+  
+  // Safety net: pastikan center mobil tidak melewati batas yang lebih ketat
+  if (car.position.x > maxExtent) {
+    car.position.x = maxExtent;
+  }
+  if (car.position.x < minExtent) {
+    car.position.x = minExtent;
+  }
+  if (car.position.z > maxExtent) {
+    car.position.z = maxExtent;
+  }
+  if (car.position.z < minExtent) {
+    car.position.z = minExtent;
   }
 
   // Hanya boleh belok ketika mobil sedang bergerak (maju atau mundur)
